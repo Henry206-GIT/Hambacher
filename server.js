@@ -43,6 +43,30 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Glitch setup: serve source files + one-liner install script
+app.get('/src/:file', (req, res) => {
+  const allowed = ['server.js', 'package.json'];
+  if (!allowed.includes(req.params.file)) return res.sendStatus(404);
+  res.sendFile(path.join(__dirname, req.params.file));
+});
+
+app.get('/glitch-setup.sh', (req, res) => {
+  const base = `${req.protocol}://${req.get('host')}`;
+  const script = `#!/bin/bash
+set -e
+echo "==> Downloading Hambacher Schloss..."
+curl -sS "${base}/src/server.js"   -o server.js
+curl -sS "${base}/src/package.json" -o package.json
+mkdir -p public
+curl -sS "${base}/public/index.html" -o public/index.html
+echo "==> Installing dependencies..."
+npm install --production
+echo "==> Done! Refresh the Glitch preview window."
+`;
+  res.setHeader('Content-Type', 'text/plain');
+  res.send(script);
+});
+
 app.get('/api/footprints/:exhibitionId', (req, res) => {
   const rows = db.prepare(
     'SELECT * FROM footprints WHERE exhibition_id = ? ORDER BY created_at DESC LIMIT 100'

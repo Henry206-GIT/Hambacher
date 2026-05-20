@@ -1,5 +1,4 @@
-[app]
-name = "hambacher-schloss"
+app = "hambacher-schloss"
 primary_region = "fra"
 
 [env]
@@ -9,9 +8,9 @@ primary_region = "fra"
 [http_service]
   internal_port = 3000
   force_https = true
-  auto_stop_machines = false
+  auto_stop_machines = true
   auto_start_machines = true
-  min_machines_running = 1
+  min_machines_running = 0
 
 [[vm]]
   memory = "256mb"
