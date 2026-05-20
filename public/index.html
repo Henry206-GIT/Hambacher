@@ -303,6 +303,21 @@
     }
     #reset-btn:active { background: rgba(0,150,255,0.2); border-color: rgba(0,200,255,0.6); }
 
+    /* ── Exit-AR-Button ── */
+    #exit-ar-btn {
+      position: absolute; bottom: 10px; left: 12px;
+      background: rgba(30,0,0,0.75);
+      border: 1px solid rgba(255,60,60,0.4);
+      border-radius: 50%;
+      width: 36px; height: 36px;
+      font-size: 16px; color: #f55;
+      cursor: pointer; pointer-events: auto;
+      display: none;
+      align-items: center; justify-content: center;
+      transition: background .15s;
+    }
+    #exit-ar-btn:active { background: rgba(200,0,0,0.4); }
+
     #toast {
       position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
       background: rgba(0,200,120,0.9);
@@ -327,52 +342,120 @@
     }
     #start-btn small { display: block; font-size: 12px; font-weight: 400; opacity: .75; margin-top: 4px; }
 
-    /* ── Bottom Panel ── */
-    #panel {
+    /* ── Bottom Sheet ── */
+    #sheet {
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      z-index: 200;
       pointer-events: auto;
-      background: rgba(4,4,20,0.97);
-      backdrop-filter: blur(12px);
-      border-top: 1px solid rgba(0,200,255,0.15);
-      padding: 12px 16px 24px;
+
+      background: rgba(4,6,24,0.97);
+      backdrop-filter: blur(24px) saturate(180%);
+      -webkit-backdrop-filter: blur(24px) saturate(180%);
+      border-radius: 22px 22px 0 0;
+      border-top: 1px solid rgba(0,200,255,0.18);
+      box-shadow: 0 -8px 40px rgba(0,0,0,0.5);
+
+      /* Snap animation */
+      transition: transform 0.38s cubic-bezier(0.32,0.72,0,1);
+      will-change: transform;
+      touch-action: none;
+
+      /* iPhone home-bar + notch */
+      padding-bottom: max(env(safe-area-inset-bottom), 10px);
+    }
+
+    /* Collapsed: only handle + peek row visible (~58px) */
+    #sheet.collapsed { transform: translateY(calc(100% - 58px)); }
+
+    /* Drag handle */
+    #sheet-handle {
+      width: 40px; height: 4px;
+      background: rgba(0,200,255,0.25);
+      border-radius: 2px;
+      margin: 10px auto 0;
+      cursor: grab;
       flex-shrink: 0;
     }
-    #panel h2 {
-      font-size: 11px; color: #446; letter-spacing: 1.5px;
-      text-transform: uppercase; margin-bottom: 10px;
+
+    /* Peek row – always visible, triggers expand */
+    #sheet-peek {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 16px 10px;
+      cursor: pointer; user-select: none;
+    }
+    #sheet-peek-label {
+      flex: 1; font-size: 14px; font-weight: 600;
+      color: #7af; letter-spacing: .3px;
+    }
+    #sheet-peek-count {
+      font-size: 12px; color: #446;
+      background: rgba(0,200,255,0.08);
+      border: 1px solid rgba(0,200,255,0.15);
+      border-radius: 12px; padding: 2px 10px;
+    }
+    #sheet-chevron {
+      font-size: 14px; color: #446;
+      transition: transform 0.3s;
+    }
+    #sheet.collapsed #sheet-chevron { transform: rotate(180deg); }
+
+    /* Expandable body */
+    #sheet-body {
+      padding: 4px 16px 8px;
+      overflow: hidden;
     }
 
-    .row { display: flex; gap: 8px; margin-bottom: 8px; }
+    /* Inputs */
+    .row { display: flex; gap: 8px; margin-bottom: 10px; }
 
     input[type="text"] {
-      flex: 1;
+      flex: 1; min-width: 0;
       background: rgba(0,200,255,0.05);
       border: 1px solid rgba(0,200,255,0.15);
-      border-radius: 8px;
-      padding: 9px 12px; color: #cef; font-size: 14px;
+      border-radius: 10px;
+      padding: 10px 13px; color: #cef;
+      font-size: 15px;
+      /* Prevent iOS zoom on focus */
+      font-size: max(16px, 15px);
     }
     input[type="text"]::placeholder { color: #335; }
     input[type="text"]:focus { outline: none; border-color: rgba(0,200,255,0.5); }
     input[type="text"].error { border-color: #f55; }
 
-    .colors { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 8px; }
+    /* Color picker */
+    .colors {
+      display: grid;
+      grid-template-columns: repeat(10, 1fr);
+      gap: 6px;
+      margin-bottom: 10px;
+    }
     .cb {
-      width: 28px; height: 28px; border-radius: 50%;
+      aspect-ratio: 1; border-radius: 50%;
       border: 2px solid transparent; cursor: pointer;
       transition: transform .15s, border-color .15s, box-shadow .15s;
+      min-width: 0;
     }
-    .cb.on { border-color: #fff; transform: scale(1.25); box-shadow: 0 0 10px currentColor; }
+    .cb.on { border-color: #fff; transform: scale(1.2); box-shadow: 0 0 10px currentColor; }
 
-    .size-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-    .size-row label { font-size: 12px; color: #446; width: 50px; }
-    input[type="range"] { flex: 1; accent-color: #0af; }
+    /* Size slider */
+    .size-row {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 12px;
+    }
+    .size-row label { font-size: 12px; color: #446; white-space: nowrap; }
+    input[type="range"] { flex: 1; accent-color: #0af; height: 4px; }
 
+    /* Add button */
     #add-btn {
-      width: 100%; padding: 12px;
+      width: 100%; padding: 13px;
       background: linear-gradient(135deg, #0af, #09f);
-      border: none; border-radius: 10px;
-      color: #000; font-weight: 700; font-size: 15px;
+      border: none; border-radius: 12px;
+      color: #000; font-weight: 700; font-size: 16px;
       cursor: pointer; letter-spacing: .3px;
-      box-shadow: 0 0 20px rgba(0,180,255,0.3);
+      box-shadow: 0 0 24px rgba(0,180,255,0.3);
+      /* Minimum touch target */
+      min-height: 48px;
     }
     #add-btn:active { opacity: .82; }
   </style>
@@ -428,11 +511,23 @@
       <small>Bodenerkennung aktiv</small>
     </button>
     <div id="mode-badge">· · ·</div>
+    <button id="exit-ar-btn" title="AR beenden">✕</button>
     <button id="reset-btn" title="Tracking zurücksetzen">↺ Reset</button>
   </div>
 
-  <div id="panel">
-    <h2>👣 Hinterlasse deine Spur</h2>
+</div>
+
+<!-- Bottom Sheet (außerhalb #ui, eigenes z-index) -->
+<div id="sheet" class="collapsed">
+  <div id="sheet-handle"></div>
+
+  <div id="sheet-peek">
+    <span id="sheet-peek-label">👣 Fußspur hinterlassen</span>
+    <span id="sheet-peek-count">0 Spuren</span>
+    <span id="sheet-chevron">▲</span>
+  </div>
+
+  <div id="sheet-body">
     <div class="row">
       <input type="text" id="inp-name" placeholder="Dein Name *" maxlength="20">
       <input type="text" id="inp-msg"  placeholder="Nachricht (optional)" maxlength="36">
@@ -640,7 +735,10 @@ async function loadFootprints() {
   try {
     const data = await fetch(`/api/footprints/${EXHIBITION_ID}`).then(r => r.json());
     data.forEach(spawnFootprint);
-    document.getElementById('badge').textContent = `${data.length} Fußspuren`;
+    const txt = `${data.length} Fußspuren`;
+    document.getElementById('badge').textContent = txt;
+    const sc = document.getElementById('sheet-peek-count');
+    if (sc) sc.textContent = `${data.length} Spuren`;
   } catch (e) { console.warn('load error', e); }
 }
 
@@ -691,11 +789,16 @@ async function init() {
   }
 }
 
+const exitArBtn = document.getElementById('exit-ar-btn');
+exitArBtn.onclick = () => { try { sceneEl.exitVR(); } catch(_){} };
+
 sceneEl.addEventListener('enter-vr', () => {
   document.getElementById('fallback-video').style.display = 'none';
+  exitArBtn.style.display = 'flex';
 });
 sceneEl.addEventListener('exit-vr', () => {
   document.getElementById('fallback-video').style.display = '';
+  exitArBtn.style.display = 'none';
   startFallbackCamera();
 });
 
@@ -772,6 +875,50 @@ sceneEl.addEventListener('loaded', () => {
   setInterval(loadFootprints, 7000);
   init();
 });
+
+/* ─── Bottom Sheet ─── */
+(function () {
+  const sheet   = document.getElementById('sheet');
+  const peek    = document.getElementById('sheet-peek');
+  const handle  = document.getElementById('sheet-handle');
+  let expanded  = false;
+  let dragStart = null;
+  let dragY     = 0;
+
+  function setExpanded(val) {
+    expanded = val;
+    sheet.classList.toggle('collapsed', !val);
+  }
+
+  // Tap peek row → expand; tap handle when expanded → collapse
+  peek.addEventListener('click', () => { if (!expanded) setExpanded(true); });
+  handle.addEventListener('click', () => setExpanded(!expanded));
+
+  // Touch drag on handle
+  handle.addEventListener('touchstart', e => {
+    dragStart = e.touches[0].clientY;
+    dragY = 0;
+    sheet.style.transition = 'none';
+  }, { passive: true });
+
+  handle.addEventListener('touchmove', e => {
+    if (dragStart === null) return;
+    dragY = e.touches[0].clientY - dragStart;
+    if (dragY > 0) sheet.style.transform = `translateY(${dragY}px)`;
+  }, { passive: true });
+
+  handle.addEventListener('touchend', () => {
+    sheet.style.transition = '';
+    sheet.style.transform  = '';
+    if (dragY > 60) setExpanded(false);
+    dragStart = null;
+  });
+
+  // Close sheet when tapping AR view
+  document.getElementById('ui').addEventListener('click', e => {
+    if (expanded && e.target === document.querySelector('.ar-stage')) setExpanded(false);
+  });
+})();
 
 /* ─── Farbauswahl ─── */
 const colorsEl = document.getElementById('colors');
