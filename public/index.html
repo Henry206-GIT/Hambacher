@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Hambacher Schloss – Digitale Fußspuren</title>
+  <title>Hambacher Schloss – Digitale Handabdrücke</title>
   <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
 
   <script>
@@ -57,25 +57,6 @@
       gl_FragColor = vec4(col, alpha);
     }`;
 
-  /* ────────────────────────────────────────────────
-     GLSL – Reticle-Shader (Boden-Erkennungsring)
-  ──────────────────────────────────────────────── */
-  const RETICLE_FRAG = /* glsl */`
-    precision highp float;
-    uniform float time;
-    uniform vec3  color;
-    varying vec2  vUv;
-
-    void main(){
-      vec2  c    = vUv - 0.5;
-      float dist = length(c);
-      float ring = smoothstep(0.47,0.46,dist) * smoothstep(0.38,0.42,dist);
-      float dash = step(0.5, fract(atan(c.y,c.x)/(3.14159*2.0)*8.0 - time*1.5));
-      float inner= smoothstep(0.08,0.07,dist);
-      float pulse= sin(time*3.0)*0.15+0.85;
-      float alpha= (ring*dash*0.9 + inner*0.7) * pulse;
-      gl_FragColor = vec4(color * (1.0 + ring*0.5), alpha);
-    }`;
 
   /* ════════════════════════════════════════════════
      A-Frame Komponente: holo-mat
@@ -160,72 +141,6 @@
     },
   });
 
-  /* ════════════════════════════════════════════════
-     A-Frame Komponente: reticle-mat
-     Animierter Boden-Erkennungsring (WebXR).
-  ════════════════════════════════════════════════ */
-  AFRAME.registerComponent('reticle-mat', {
-    init: function () {
-      this.u = { time: { value: 0 }, color: { value: new THREE.Color('#00ffcc') } };
-      const mat = new THREE.ShaderMaterial({
-        uniforms:       this.u,
-        vertexShader:   HOLO_VERT,
-        fragmentShader: RETICLE_FRAG,
-        transparent:    true,
-        blending:       THREE.AdditiveBlending,
-        side:           THREE.DoubleSide,
-        depthWrite:     false,
-      });
-      this.el.addEventListener('object3dset', () => {
-        const m = this.el.getObject3D('mesh');
-        if (m) m.traverse(c => { if (c.isMesh) c.material = mat; });
-      });
-      this._mat = mat;
-    },
-    tick: function (t) { this.u.time.value = t / 1000; },
-  });
-
-  /* ════════════════════════════════════════════════
-     A-Frame Komponente: ar-hit-test
-     WebXR Bodenerkennung – bewegt das Reticle auf
-     den echten erkannten Boden.
-  ════════════════════════════════════════════════ */
-  AFRAME.registerComponent('ar-hit-test', {
-    init: function () {
-      this.hitTestSource = null;
-      this.el.sceneEl.addEventListener('enter-vr', () => this._setup());
-      this.el.sceneEl.addEventListener('exit-vr',  () => { this.hitTestSource = null; });
-    },
-    _setup: async function () {
-      const session = this.el.sceneEl.renderer.xr.getSession();
-      if (!session) return;
-      try {
-        const vs = await session.requestReferenceSpace('viewer');
-        this.hitTestSource = await session.requestHitTestSource({ space: vs });
-        session.addEventListener('end', () => { this.hitTestSource = null; });
-      } catch (e) { console.warn('hit-test unavailable', e); }
-    },
-    tick: function () {
-      if (!this.hitTestSource) return;
-      const xr     = this.el.sceneEl.renderer.xr;
-      const frame  = xr.getFrame?.();
-      if (!frame) return;
-      const ref     = xr.getReferenceSpace();
-      const results = frame.getHitTestResults(this.hitTestSource);
-      const reticle = document.getElementById('reticle');
-      if (!reticle) return;
-      if (results.length) {
-        const pose = results[0].getPose(ref);
-        if (pose) {
-          const p = pose.transform.position;
-          reticle.object3D.position.set(p.x, p.y + 0.002, p.z);
-          reticle.setAttribute('visible', true);
-        }
-      } else {
-        reticle.setAttribute('visible', false);
-      }
-    },
-  });
   </script>
 
   <style>
@@ -303,21 +218,6 @@
     }
     #reset-btn:active { background: rgba(0,150,255,0.2); border-color: rgba(0,200,255,0.6); }
 
-    /* ── Exit-AR-Button ── */
-    #exit-ar-btn {
-      position: absolute; bottom: 10px; left: 12px;
-      background: rgba(30,0,0,0.75);
-      border: 1px solid rgba(255,60,60,0.4);
-      border-radius: 50%;
-      width: 36px; height: 36px;
-      font-size: 16px; color: #f55;
-      cursor: pointer; pointer-events: auto;
-      display: none;
-      align-items: center; justify-content: center;
-      transition: background .15s;
-    }
-    #exit-ar-btn:active { background: rgba(200,0,0,0.4); }
-
     #toast {
       position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
       background: rgba(0,200,120,0.9);
@@ -327,20 +227,6 @@
       pointer-events: none; white-space: nowrap;
     }
     #toast.show { opacity: 1; }
-
-    #start-btn {
-      position: absolute; top: 50%; left: 50%;
-      transform: translate(-50%, -50%);
-      background: linear-gradient(135deg, #0af, #09f 50%, #06d);
-      color: #fff; border: 1px solid rgba(0,200,255,0.5);
-      border-radius: 14px; padding: 16px 30px;
-      font-size: 17px; font-weight: 700;
-      cursor: pointer;
-      box-shadow: 0 0 30px rgba(0,180,255,0.4), 0 4px 20px rgba(0,0,0,.4);
-      pointer-events: auto; display: none; text-align: center;
-      letter-spacing: .5px;
-    }
-    #start-btn small { display: block; font-size: 12px; font-weight: 400; opacity: .75; margin-top: 4px; }
 
     /* ── Bottom Sheet ── */
     #sheet {
@@ -471,22 +357,17 @@
   renderer="alpha: true; antialias: true; colorManagement: true; sortObjects: true"
   loading-screen="enabled: false"
   device-orientation-permission-ui="enabled: false"
-  webxr="requiredFeatures: local-floor; optionalFeatures: dom-overlay,hit-test; overlayElement: #ui;"
-  ar-hit-test
 >
   <a-camera
     id="cam3d"
     position="0 1.5 0"
     look-controls="pointerLockEnabled: false; magicWindowTrackingEnabled: true; touchEnabled: false"
     wasd-controls="enabled: false"
+    cursor="rayOrigin: mouse; fuse: false"
+    raycaster="objects: .fp-plane; far: 20"
   ></a-camera>
 
-  <!-- WebXR Boden-Reticle -->
-  <a-entity id="reticle" visible="false">
-    <a-plane width="0.4" height="0.4" rotation="-90 0 0" reticle-mat></a-plane>
-  </a-entity>
-
-  <!-- Fußspuren Container -->
+  <!-- Handabdrücke Container -->
   <a-entity id="fp-root"></a-entity>
 
   <!-- Hologramm-Gitter -->
@@ -499,19 +380,14 @@
     <div style="font-size:22px">🏰</div>
     <div>
       <h1>Hambacher Schloss</h1>
-      <small>Ausstellung 1 · Schau nach unten</small>
+      <small>Ausstellung 1 · Schau an die Wand</small>
     </div>
   </div>
 
   <div class="ar-stage">
-    <div id="badge">Lade Fußspuren…</div>
-    <div id="toast">Fußspur hinterlassen! 👣</div>
-    <button id="start-btn">
-      📷 AR starten
-      <small>Bodenerkennung aktiv</small>
-    </button>
+    <div id="badge">Lade Handabdrücke…</div>
+    <div id="toast">Handabdruck hinterlassen! 🖐️</div>
     <div id="mode-badge">· · ·</div>
-    <button id="exit-ar-btn" title="AR beenden">✕</button>
     <button id="reset-btn" title="Tracking zurücksetzen">↺ Reset</button>
   </div>
 
@@ -522,8 +398,8 @@
   <div id="sheet-handle"></div>
 
   <div id="sheet-peek">
-    <span id="sheet-peek-label">👣 Fußspur hinterlassen</span>
-    <span id="sheet-peek-count">0 Spuren</span>
+    <span id="sheet-peek-label">🖐️ Handabdruck hinterlassen</span>
+    <span id="sheet-peek-count">0 Abdrücke</span>
     <span id="sheet-chevron">▲</span>
   </div>
 
@@ -537,8 +413,27 @@
       <label>Größe</label>
       <input type="range" id="size-sl" min="0.6" max="1.5" step="0.1" value="1.0">
     </div>
-    <button id="add-btn">👣 Fußspur hinterlassen</button>
+    <button id="add-btn">🖐️ Handabdruck hinterlassen</button>
   </div>
+</div>
+
+<div id="msg-popup" style="
+  display:none; position:fixed; z-index:300;
+  bottom: 80px; left:50%; transform:translateX(-50%);
+  background:rgba(4,6,24,0.97); backdrop-filter:blur(20px);
+  -webkit-backdrop-filter:blur(20px);
+  border:1px solid rgba(0,200,255,0.25); border-radius:16px;
+  padding:16px 22px; min-width:220px; max-width:80vw;
+  text-align:center; pointer-events:auto;
+  box-shadow: 0 0 30px rgba(0,180,255,0.2);
+">
+  <div id="popup-name" style="font-size:16px;font-weight:700;color:#7af;margin-bottom:6px;"></div>
+  <div id="popup-msg"  style="font-size:14px;color:#cef;line-height:1.5;"></div>
+  <button id="popup-close" style="
+    margin-top:12px; padding:6px 18px;
+    background:rgba(0,200,255,0.12); border:1px solid rgba(0,200,255,0.2);
+    border-radius:8px; color:#7af; font-size:13px; cursor:pointer;
+  ">Schließen</button>
 </div>
 
 <script>
@@ -553,23 +448,21 @@ let selectedColor = COLORS[0];
 const renderedIds  = new Set();
 const sceneEl      = document.querySelector('a-scene');
 
-/* ─── Fußspuren-Canvas zeichnen ─── */
-function makeFootCanvas(baseColor) {
-  const W = 300, H = 400, s = 105;
+/* ─── Handabdruck-Canvas zeichnen ─── */
+function makeHandCanvas(baseColor) {
+  const W = 300, H = 380;
   const cv  = document.createElement('canvas');
   cv.width  = W; cv.height = H;
   const ctx = cv.getContext('2d');
   ctx.clearRect(0, 0, W, H);
 
-  // Weiche Glut hinter den Füßen
   const grd = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, W/2);
   grd.addColorStop(0, hexAlpha(baseColor, 0.18));
   grd.addColorStop(1, 'transparent');
   ctx.fillStyle = grd;
   ctx.fillRect(0, 0, W, H);
 
-  drawOneFoot(ctx, W * 0.30, H * 0.52, s, baseColor, false);
-  drawOneFoot(ctx, W * 0.70, H * 0.44, s, baseColor, true);
+  drawOneHand(ctx, W/2, H * 0.58, 95, baseColor);
   return cv;
 }
 
@@ -580,73 +473,91 @@ function hexAlpha(hex, a) {
   return `rgba(${r},${g},${b},${a})`;
 }
 
-function drawOneFoot(ctx, cx, cy, s, color, mirror) {
+function drawOneHand(ctx, cx, cy, s, color) {
   ctx.save();
   ctx.translate(cx, cy);
-  if (mirror) ctx.scale(-1, 1);
+  ctx.shadowColor = color;
+  ctx.shadowBlur  = 18;
+  ctx.fillStyle   = '#fff';
 
-  ctx.shadowColor  = color;
-  ctx.shadowBlur   = 18;
+  // Handfläche
+  ctx.beginPath();
+  ctx.ellipse(0, 0, s * 0.38, s * 0.40, 0, 0, Math.PI * 2);
+  ctx.fill();
 
-  ctx.fillStyle = '#fff';  // weiße Basis → Shader tint mit glowColor
+  // Handgelenk
+  ctx.beginPath();
+  ctx.ellipse(0, s * 0.48, s * 0.22, s * 0.14, 0, 0, Math.PI * 2);
+  ctx.fill();
 
-  // Ferse
-  ctx.beginPath(); ctx.ellipse(0, s*.31, s*.23, s*.17, 0, 0, Math.PI*2); ctx.fill();
-  // Spann
-  ctx.beginPath(); ctx.ellipse(-s*.01, s*.07, s*.13, s*.27, 0, 0, Math.PI*2); ctx.fill();
-  // Ballen
-  ctx.beginPath(); ctx.ellipse(s*.01,-s*.13, s*.22, s*.17, 0, 0, Math.PI*2); ctx.fill();
-
-  // Zehen
-  const TX=[-0.16,-0.08,0.01,0.10,0.17];
-  const TY=[-0.29,-0.33,-0.31,-0.28,-0.23];
-  const TR=[0.078,0.068,0.062,0.055,0.048];
-  for(let i=0;i<5;i++){
+  // 4 Finger (Zeige-, Mittel-, Ring-, Kleinfinger)
+  const fX   = [-0.23, -0.08,  0.08,  0.23];
+  const fLen = [ 0.46,  0.52,  0.48,  0.36];
+  const fW   = [0.085, 0.095, 0.085, 0.070];
+  for (let i = 0; i < 4; i++) {
+    const topY = -s * 0.38 - s * fLen[i];
+    const midY = -s * 0.38 - s * fLen[i] / 2;
     ctx.beginPath();
-    ctx.ellipse(TX[i]*s, TY[i]*s, TR[i]*s, TR[i]*s*.9, 0, 0, Math.PI*2);
+    ctx.ellipse(fX[i] * s, midY, fW[i] * s, s * fLen[i] / 2 + s * 0.05, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(fX[i] * s, topY, fW[i] * s, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  // Innere Konturlinie (Hologramm-Detail)
+  // Daumen (schräg links)
+  ctx.save();
+  ctx.rotate(0.45);
+  ctx.beginPath();
+  ctx.ellipse(-s * 0.38, -s * 0.08, s * 0.075, s * 0.20, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(-s * 0.38, -s * 0.27, s * 0.075, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Konturlinie (Hologramm-Detail)
   ctx.strokeStyle = color;
   ctx.lineWidth   = 1.5;
   ctx.globalAlpha = 0.5;
-  ctx.beginPath(); ctx.ellipse(0, s*.31, s*.22, s*.16, 0, 0, Math.PI*2); ctx.stroke();
-  ctx.beginPath(); ctx.ellipse(s*.01,-s*.13, s*.21, s*.16, 0, 0, Math.PI*2); ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(0, 0, s * 0.37, s * 0.39, 0, 0, Math.PI * 2);
+  ctx.stroke();
   ctx.globalAlpha = 1;
 
   ctx.restore();
 }
 
-/* ─── Fußspur in die Szene einsetzen ─── */
-function spawnFootprint(fp) {
+/* ─── Handabdruck in die Szene einsetzen ─── */
+function spawnHandprint(fp) {
   if (renderedIds.has(fp.id)) return;
   renderedIds.add(fp.id);
 
-  const sz   = fp.size || 1.0;
-  const W    = 0.52 * sz;
-  const H    = W * (400 / 300);
-  const col  = fp.color || '#00cfff';
+  const sz  = fp.size || 1.0;
+  const W   = 0.52 * sz;
+  const H   = W * (380 / 300);
+  const col = fp.color || '#00cfff';
 
   const wrap = document.createElement('a-entity');
   wrap.setAttribute('position', `${fp.x} 0 ${fp.z}`);
   wrap.setAttribute('rotation', `0 ${-(fp.rotation || 0)} 0`);
-  // Einblend-Animation beim Erscheinen
   wrap.setAttribute('animation__spawn',
     'property: scale; from: 0 0 0; to: 1 1 1; dur: 700; easing: easeOutElastic;');
 
-  /* -- Hologramm Fußspur -- */
+  /* -- Hologramm Handabdruck -- */
   const plane = document.createElement('a-plane');
   plane.setAttribute('width',    W);
   plane.setAttribute('height',   H);
   plane.setAttribute('rotation', '-90 0 0');
   plane.setAttribute('position', '0 0.004 0');
   plane.setAttribute('holo-mat', `color: ${col}`);
+  plane.classList.add('fp-plane');
 
   plane.addEventListener('loaded', () => {
     const comp = plane.components['holo-mat'];
-    if (comp) comp.setTexture(makeFootCanvas(col));
+    if (comp) comp.setTexture(makeHandCanvas(col));
   });
+  plane.addEventListener('click', () => showPopup(fp));
   wrap.appendChild(plane);
 
   /* -- Pulsierender Glow-Ring -- */
@@ -671,47 +582,33 @@ function spawnFootprint(fp) {
   labelWrap.setAttribute('position', `0 0.22 0`);
   labelWrap.setAttribute('billboard', '');
 
-  // Hintergrund-Panel
+  const lblW = Math.min(0.65, 0.12 + fp.name.length * 0.025) * sz;
   const lblBg = document.createElement('a-plane');
-  const lblW  = Math.min(0.65, 0.12 + fp.name.length * 0.025) * sz;
   lblBg.setAttribute('width',  lblW);
-  lblBg.setAttribute('height', fp.message ? '0.14' : '0.09');
+  lblBg.setAttribute('height', '0.09');
   lblBg.setAttribute('material',
     `color: #000820; transparent: true; opacity: 0.7;
      emissive: ${col}; emissiveIntensity: 0.05;`);
 
-  // Rahmen-Glow
   const lblBorder = document.createElement('a-plane');
   lblBorder.setAttribute('width',  lblW + 0.01);
-  lblBorder.setAttribute('height', (fp.message ? 0.14 : 0.09) + 0.01);
+  lblBorder.setAttribute('height', '0.10');
   lblBorder.setAttribute('position', '0 0 -0.001');
   lblBorder.setAttribute('material',
     `color: ${col}; transparent: true; opacity: 0.35;
      blending: additive; depthWrite: false;`);
 
-  // Name
   const lblName = document.createElement('a-text');
   lblName.setAttribute('value', fp.name);
   lblName.setAttribute('align', 'center');
   lblName.setAttribute('color', col);
   lblName.setAttribute('width', lblW * 3.5);
-  lblName.setAttribute('position', fp.message ? '0 0.025 0.002' : '0 0 0.002');
+  lblName.setAttribute('position', '0 0 0.002');
   lblName.setAttribute('wrap-count', 18);
 
   labelWrap.appendChild(lblBorder);
   labelWrap.appendChild(lblBg);
   labelWrap.appendChild(lblName);
-
-  if (fp.message) {
-    const lblMsg = document.createElement('a-text');
-    lblMsg.setAttribute('value', fp.message);
-    lblMsg.setAttribute('align', 'center');
-    lblMsg.setAttribute('color', '#aaddff');
-    lblMsg.setAttribute('width', lblW * 3.2);
-    lblMsg.setAttribute('position', '0 -0.03 0.002');
-    lblMsg.setAttribute('wrap-count', 20);
-    labelWrap.appendChild(lblMsg);
-  }
 
   wrap.appendChild(labelWrap);
   document.getElementById('fp-root').appendChild(wrap);
@@ -730,15 +627,14 @@ function buildGrid() {
   for (let z = -r; z <= r; z += step) line(`${-r} 0 ${z}`, `${r} 0 ${z}`);
 }
 
-/* ─── Fußspuren laden ─── */
+/* ─── Handabdrücke laden ─── */
 async function loadFootprints() {
   try {
     const data = await fetch(`/api/footprints/${EXHIBITION_ID}`).then(r => r.json());
-    data.forEach(spawnFootprint);
-    const txt = `${data.length} Fußspuren`;
-    document.getElementById('badge').textContent = txt;
+    data.forEach(spawnHandprint);
+    document.getElementById('badge').textContent = `${data.length} Handabdrücke`;
     const sc = document.getElementById('sheet-peek-count');
-    if (sc) sc.textContent = `${data.length} Spuren`;
+    if (sc) sc.textContent = `${data.length} Abdrücke`;
   } catch (e) { console.warn('load error', e); }
 }
 
@@ -755,52 +651,39 @@ function startFallbackCamera() {
 
 /* ─── Init ─── */
 async function init() {
-  const startBtn  = document.getElementById('start-btn');
-  const modeBadge = document.getElementById('mode-badge');
-
-  const hasWebXR = !!(
-    navigator.xr &&
-    await navigator.xr.isSessionSupported('immersive-ar').catch(() => false)
-  );
+  const modeBadge  = document.getElementById('mode-badge');
   const needsIOSPerm = typeof DeviceOrientationEvent?.requestPermission === 'function';
 
-  if (hasWebXR) {
-    modeBadge.textContent  = '📡 WebXR · echte Bodenerkennung';
-    startBtn.style.display = 'block';
-    startBtn.onclick = () => {
-      sceneEl.enterAR();
-      startBtn.style.display = 'none';
-    };
+  if (needsIOSPerm) {
+    modeBadge.textContent = '📱 iOS · Tippe zum Starten';
     startFallbackCamera();
-
-  } else if (needsIOSPerm) {
-    modeBadge.textContent  = '📱 iOS Gyro-Modus';
-    startBtn.innerHTML     = '🔓 Sensor & Kamera aktivieren<small>Gyro-basiertes AR</small>';
-    startBtn.style.display = 'block';
-    startBtn.onclick = async () => {
+    document.querySelector('.ar-stage').addEventListener('click', async () => {
       await DeviceOrientationEvent.requestPermission().catch(() => {});
-      startBtn.style.display = 'none';
-      startFallbackCamera();
-    };
-
+      modeBadge.textContent = '📱 iOS Gyro';
+    }, { once: true });
   } else {
     modeBadge.textContent = '📱 Gyro-Modus';
     startFallbackCamera();
   }
 }
 
-const exitArBtn = document.getElementById('exit-ar-btn');
-exitArBtn.onclick = () => { try { sceneEl.exitVR(); } catch(_){} };
+/* ─── Popup: Nachricht anzeigen ─── */
+let popupTimer = null;
 
-sceneEl.addEventListener('enter-vr', () => {
-  document.getElementById('fallback-video').style.display = 'none';
-  exitArBtn.style.display = 'flex';
-});
-sceneEl.addEventListener('exit-vr', () => {
-  document.getElementById('fallback-video').style.display = '';
-  exitArBtn.style.display = 'none';
-  startFallbackCamera();
-});
+function showPopup(fp) {
+  const popup = document.getElementById('msg-popup');
+  document.getElementById('popup-name').textContent = fp.name;
+  document.getElementById('popup-msg').textContent  =
+    fp.message || '(Keine Nachricht hinterlassen)';
+  popup.style.display = 'block';
+  clearTimeout(popupTimer);
+  popupTimer = setTimeout(() => { popup.style.display = 'none'; }, 5000);
+}
+
+document.getElementById('popup-close').onclick = () => {
+  document.getElementById('msg-popup').style.display = 'none';
+  clearTimeout(popupTimer);
+};
 
 /* ─── Reset-Tracking-Button ─── */
 let resetBusy = false;
@@ -814,42 +697,33 @@ document.getElementById('reset-btn').onclick = async () => {
   btn.style.opacity = '0.5';
 
   try {
-    const inAR = sceneEl.is && sceneEl.is('vr-mode');
-
-    if (inAR) {
-      // WebXR-Modus: Session sauber beenden, dann neu starten
-      try { await sceneEl.exitVR(); } catch (_) {}
-      await new Promise(r => setTimeout(r, 800));
-      try { await sceneEl.enterAR(); } catch (_) {}
-    } else {
-      // Gyro-Modus: look-controls intern zurücksetzen
-      try {
-        const cam = document.getElementById('cam3d');
-        if (cam && cam.components) {
-          const lc = cam.components['look-controls'];
-          if (lc) {
-            if (lc.yawObject)   lc.yawObject.rotation.y   = 0;
-            if (lc.pitchObject) lc.pitchObject.rotation.x = 0;
-          }
-          if (cam.object3D) {
-            cam.object3D.rotation.set(0, 0, 0);
-            cam.object3D.quaternion.identity();
-          }
+    // look-controls zurücksetzen
+    try {
+      const cam = document.getElementById('cam3d');
+      if (cam && cam.components) {
+        const lc = cam.components['look-controls'];
+        if (lc) {
+          if (lc.yawObject)   lc.yawObject.rotation.y   = 0;
+          if (lc.pitchObject) lc.pitchObject.rotation.x = 0;
         }
-      } catch (_) {}
-
-      // Kamera-Stream neu starten
-      try {
-        const vid = document.getElementById('fallback-video');
-        if (vid && vid.srcObject) {
-          vid.srcObject.getTracks().forEach(t => { try { t.stop(); } catch(_){} });
-          vid.srcObject = null;
+        if (cam.object3D) {
+          cam.object3D.rotation.set(0, 0, 0);
+          cam.object3D.quaternion.identity();
         }
-      } catch (_) {}
+      }
+    } catch (_) {}
 
-      await new Promise(r => setTimeout(r, 300));
-      startFallbackCamera();
-    }
+    // Kamera-Stream neu starten
+    try {
+      const vid = document.getElementById('fallback-video');
+      if (vid && vid.srcObject) {
+        vid.srcObject.getTracks().forEach(t => { try { t.stop(); } catch(_){} });
+        vid.srcObject = null;
+      }
+    } catch (_) {}
+
+    await new Promise(r => setTimeout(r, 300));
+    startFallbackCamera();
 
     btn.textContent = '✓';
     btn.style.color   = '#0f9';
