@@ -189,12 +189,17 @@
      A-Frame Komponente: ar-hit-test
      WebXR Flächenerkennung – bewegt Reticle auf
      erkannte Flächen (Boden, Wände, Objekte).
+     Speichert lastPose für tap-to-place.
   ════════════════════════════════════════════════ */
   AFRAME.registerComponent('ar-hit-test', {
     init: function () {
       this.hitTestSource = null;
+      this.lastPose      = null;
       this.el.sceneEl.addEventListener('enter-vr', () => this._setup());
-      this.el.sceneEl.addEventListener('exit-vr',  () => { this.hitTestSource = null; });
+      this.el.sceneEl.addEventListener('exit-vr',  () => {
+        this.hitTestSource = null;
+        this.lastPose      = null;
+      });
     },
     _setup: async function () {
       const session = this.el.sceneEl.renderer.xr.getSession();
@@ -217,8 +222,13 @@
       if (results.length) {
         const pose = results[0].getPose(ref);
         if (pose) {
+          this.lastPose = pose;
           const p = pose.transform.position;
           reticle.object3D.position.set(p.x, p.y + 0.002, p.z);
+          reticle.object3D.quaternion.set(
+            pose.transform.orientation.x, pose.transform.orientation.y,
+            pose.transform.orientation.z, pose.transform.orientation.w
+          );
           reticle.setAttribute('visible', true);
         }
       } else {
@@ -506,6 +516,30 @@
     <button id="add-btn">🖐️ Handabdruck hinterlassen</button>
   </div>
 
+  <!-- Place-Overlay (innerhalb #ui für dom-overlay) -->
+  <div id="place-overlay" style="
+    display:none; position:fixed; inset:0; z-index:250;
+    background:rgba(0,5,20,0.45); backdrop-filter:blur(2px);
+    -webkit-backdrop-filter:blur(2px);
+    flex-direction:column; align-items:center; justify-content:center;
+    gap:20px; pointer-events:auto;
+  ">
+    <div style="
+      background:rgba(4,6,24,0.95); border:1px solid rgba(0,200,255,0.3);
+      border-radius:20px; padding:24px 28px; text-align:center; max-width:280px;
+      box-shadow:0 0 40px rgba(0,180,255,0.2);
+    ">
+      <div style="font-size:36px;margin-bottom:10px;">🖐️</div>
+      <div style="font-size:15px;font-weight:700;color:#7af;margin-bottom:6px;">Fläche antippen</div>
+      <div style="font-size:12px;color:#889;line-height:1.6;">Zeige auf Boden, Wand oder<br>Objekt und tippe darauf</div>
+    </div>
+    <button id="place-cancel" style="
+      padding:9px 26px; background:rgba(255,60,60,0.12);
+      border:1px solid rgba(255,60,60,0.3); border-radius:12px;
+      color:#f77; font-size:13px; cursor:pointer; pointer-events:auto;
+    ">Abbrechen</button>
+  </div>
+
   <!-- Tap-to-reveal Popup (innerhalb #ui für dom-overlay) -->
   <div id="msg-popup" style="
   display:none; position:fixed; z-index:300;
@@ -633,9 +667,14 @@ function spawnHandprint(fp) {
 
   const wrap = document.createElement('a-entity');
   wrap.setAttribute('position', `${fp.x} ${y} ${fp.z}`);
-  wrap.setAttribute('rotation', `0 ${-(fp.rotation || 0)} 0`);
   wrap.setAttribute('animation__spawn',
     'property: scale; from: 0 0 0; to: 1 1 1; dur: 700; easing: easeOutElastic;');
+  // Oberflächenausrichtung via gespeichertem Quaternion anwenden
+  wrap.addEventListener('loaded', () => {
+    const qx = fp.quat_x || 0, qy = fp.quat_y || 0,
+          qz = fp.quat_z || 0, qw = fp.quat_w != null ? fp.quat_w : 1;
+    wrap.object3D.quaternion.set(qx, qy, qz, qw);
+  }, { once: true });
 
   /* -- Hologramm Handabdruck (flach auf Boden) -- */
   const plane = document.createElement('a-plane');
@@ -650,7 +689,7 @@ function spawnHandprint(fp) {
     const comp = plane.components['holo-mat'];
     if (comp) comp.setTexture(makeHandCanvas(col));
   });
-  plane.addEventListener('click', () => showPopup(fp));
+  plane.addEventListener('click', () => { if (!placeModeActive) showPopup(fp); });
   wrap.appendChild(plane);
 
   /* -- Pulsierender Glow-Ring -- */
@@ -934,8 +973,59 @@ COLORS.forEach(c => {
   colorsEl.appendChild(btn);
 });
 
+/* ─── Tap-to-Place ─── */
+let pendingFp       = null;
+let placeModeActive = false;
+
+async function confirmPlacement(x, y, z, qx, qy, qz, qw) {
+  if (!placeModeActive || !pendingFp) return;
+  placeModeActive = false;
+  document.getElementById('place-overlay').style.display = 'none';
+  document.getElementById('reticle').setAttribute('visible', false);
+
+  await fetch(`/api/footprints/${EXHIBITION_ID}`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({
+      ...pendingFp,
+      x, y: y || 0, z,
+      quat_x: qx || 0, quat_y: qy || 0, quat_z: qz || 0,
+      quat_w: qw != null ? qw : 1,
+    }),
+  });
+
+  await loadFootprints();
+  pendingFp = null;
+
+  const t = document.getElementById('toast');
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// XR-Select-Event (WebXR Tap) → Handabdruck platzieren
+sceneEl.addEventListener('enter-vr', () => {
+  const session = sceneEl.renderer.xr?.getSession?.();
+  if (!session) return;
+  session.addEventListener('select', () => {
+    if (!placeModeActive) return;
+    const hitTest = sceneEl.components['ar-hit-test'];
+    const pose    = hitTest?.lastPose;
+    if (!pose) return;
+    const p = pose.transform.position;
+    const o = pose.transform.orientation;
+    confirmPlacement(p.x, p.y, p.z, o.x, o.y, o.z, o.w);
+  });
+});
+
+// Abbrechen
+document.getElementById('place-cancel').onclick = () => {
+  placeModeActive = false;
+  pendingFp = null;
+  document.getElementById('place-overlay').style.display = 'none';
+};
+
 /* ─── Handabdruck hinzufügen ─── */
-document.getElementById('add-btn').onclick = async () => {
+document.getElementById('add-btn').onclick = () => {
   const nameEl = document.getElementById('inp-name');
   const name   = nameEl.value.trim();
   if (!name) {
@@ -944,22 +1034,44 @@ document.getElementById('add-btn').onclick = async () => {
     setTimeout(() => nameEl.classList.remove('error'), 900);
     return;
   }
-  const message = document.getElementById('inp-msg').value.trim();
-  const size    = parseFloat(document.getElementById('size-sl').value);
 
-  await fetch(`/api/footprints/${EXHIBITION_ID}`, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ name, message, color: selectedColor, size }),
-  });
+  pendingFp = {
+    name,
+    message: document.getElementById('inp-msg').value.trim(),
+    color:   selectedColor,
+    size:    parseFloat(document.getElementById('size-sl').value),
+  };
 
-  await loadFootprints();
   nameEl.value = '';
   document.getElementById('inp-msg').value = '';
+  document.getElementById('sheet').classList.add('collapsed');
 
-  const t = document.getElementById('toast');
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2500);
+  if (sceneEl.is && sceneEl.is('vr-mode')) {
+    // WebXR aktiv: warte auf Tap auf erkannte Fläche
+    placeModeActive = true;
+    document.getElementById('place-overlay').style.display = 'flex';
+  } else {
+    // Gyro-Modus: Platzierung auf Boden direkt per Touch
+    placeModeActive = true;
+    document.getElementById('place-overlay').style.display = 'flex';
+    // Tap auf AR-Bühne → Boden-Platzierung (y=0, Quaternion identity = flach)
+    const placeOnFloor = (e) => {
+      if (!placeModeActive) return;
+      e.stopPropagation();
+      // Kameraposition als Basis, 2m vor der Kamera auf Bodenhöhe
+      const cam = document.getElementById('cam3d');
+      if (!cam) return;
+      const pos = cam.object3D.position;
+      const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.object3D.quaternion);
+      dir.y = 0; dir.normalize();
+      confirmPlacement(
+        pos.x + dir.x * 2, 0, pos.z + dir.z * 2,
+        0, 0, 0, 1  // identity quaternion = flach auf Boden
+      );
+    };
+    document.querySelector('.ar-stage').addEventListener('click',    placeOnFloor, { once: true });
+    document.querySelector('.ar-stage').addEventListener('touchend', placeOnFloor, { once: true });
+  }
 };
 </script>
 </body>

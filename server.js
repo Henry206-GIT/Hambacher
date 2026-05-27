@@ -17,57 +17,31 @@ db.exec(`
     x REAL NOT NULL,
     y REAL DEFAULT 0,
     z REAL NOT NULL,
-    rotation REAL DEFAULT 0,
+    quat_x REAL DEFAULT 0,
+    quat_y REAL DEFAULT 0,
+    quat_z REAL DEFAULT 0,
+    quat_w REAL DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )
 `);
-// Migration for existing DBs without y column
-try { db.exec('ALTER TABLE footprints ADD COLUMN y REAL DEFAULT 0'); } catch (_) {}
 
-// Seed some demo footprints for exhibition "1"
-const existing = db.prepare('SELECT COUNT(*) as c FROM footprints WHERE exhibition_id = ?').get('1');
-if (existing.c === 0) {
-  const insert = db.prepare(`
-    INSERT INTO footprints (exhibition_id, name, message, color, size, x, z, rotation)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const demos = [
-    ['1', 'Anna', 'Tolle Ausstellung!', '#e91e63', 1.0, -1.2, -2.5, 15],
-    ['1', 'Max', 'War hier 2024', '#2196f3', 0.9, 1.5, -3.0, -20],
-    ['1', 'Julia', 'Geschichte hautnah', '#4caf50', 1.1, -0.5, -1.8, 5],
-    ['1', 'Tom', 'Super!', '#ff9800', 0.95, 2.0, -2.0, 30],
-    ['1', 'Lisa', 'Beeindruckend', '#9c27b0', 1.05, -2.0, -1.5, -10],
-    ['1', 'Felix', 'Hambacher Schloss ❤️', '#f44336', 1.0, 0.8, -3.5, 45],
-  ];
-  for (const d of demos) insert.run(...d);
-}
+// Migrations für bestehende DBs
+['y REAL DEFAULT 0', 'quat_x REAL DEFAULT 0', 'quat_y REAL DEFAULT 0',
+ 'quat_z REAL DEFAULT 0', 'quat_w REAL DEFAULT 1'].forEach(col => {
+  try { db.exec(`ALTER TABLE footprints ADD COLUMN ${col}`); } catch (_) {}
+});
+
+// Alle alten Abdrücke löschen (kein Orientierungsdatum)
+db.exec(`DELETE FROM footprints`);
 
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Glitch setup: serve source files + one-liner install script
 app.get('/src/:file', (req, res) => {
   const allowed = ['server.js', 'package.json'];
   if (!allowed.includes(req.params.file)) return res.sendStatus(404);
   res.sendFile(path.join(__dirname, req.params.file));
-});
-
-app.get('/glitch-setup.sh', (req, res) => {
-  const base = `${req.protocol}://${req.get('host')}`;
-  const script = `#!/bin/bash
-set -e
-echo "==> Downloading Hambacher Schloss..."
-curl -sS "${base}/src/server.js"   -o server.js
-curl -sS "${base}/src/package.json" -o package.json
-mkdir -p public
-curl -sS "${base}/public/index.html" -o public/index.html
-echo "==> Installing dependencies..."
-npm install --production
-echo "==> Done! Refresh the Glitch preview window."
-`;
-  res.setHeader('Content-Type', 'text/plain');
-  res.send(script);
 });
 
 app.get('/api/footprints/:exhibitionId', (req, res) => {
@@ -77,60 +51,29 @@ app.get('/api/footprints/:exhibitionId', (req, res) => {
   res.json(rows);
 });
 
-// Minimum distance between footprint centers (metres)
-const MIN_DIST = 0.75;
-
-function findFreePosition(exhibitionId) {
-  const existing = db.prepare(
-    'SELECT x, z FROM footprints WHERE exhibition_id = ?'
-  ).all(exhibitionId);
-
-  function tooClose(x, z) {
-    return existing.some(p => Math.hypot(p.x - x, p.z - z) < MIN_DIST);
-  }
-
-  // Try random positions in expanding rings until a free spot is found.
-  // Ring radius grows so the area never gets permanently stuck.
-  const MIN_R = 0.8, STEP = 0.5, MAX_R = 6.0;
-  for (let r = MIN_R; r <= MAX_R; r += STEP) {
-    for (let attempt = 0; attempt < 20; attempt++) {
-      const angle = Math.random() * Math.PI * 2;
-      const jitter = (Math.random() - 0.5) * STEP;
-      const x = Math.cos(angle) * (r + jitter);
-      const z = -(Math.abs(Math.sin(angle) * (r + jitter)) + 0.5);
-      if (!tooClose(x, z)) return { x, z };
-    }
-  }
-
-  // Absolute fallback: grid slot beyond existing footprints
-  const cols = Math.ceil(Math.sqrt(existing.length + 1));
-  const idx  = existing.length;
-  return {
-    x: (idx % cols) * MIN_DIST - (cols * MIN_DIST) / 2,
-    z: -(Math.floor(idx / cols) * MIN_DIST + MIN_DIST),
-  };
-}
-
 app.post('/api/footprints/:exhibitionId', (req, res) => {
-  const { name, message, color, size, x: cx, y: cy, z: cz } = req.body;
-  if (!name) return res.status(400).json({ error: 'Name required' });
-
-  let x, y, z, rotation;
-  if (cx !== undefined && cz !== undefined) {
-    // Client-provided position (tap-to-place)
-    x = cx; y = cy || 0; z = cz; rotation = 0;
-  } else {
-    const pos = findFreePosition(req.params.exhibitionId);
-    x = pos.x; y = 0; z = pos.z;
-    rotation = (Math.random() - 0.5) * 60;
-  }
+  const { name, message, color, size, x, y, z, quat_x, quat_y, quat_z, quat_w } = req.body;
+  if (!name)                       return res.status(400).json({ error: 'Name required' });
+  if (x == null || z == null)      return res.status(400).json({ error: 'Position required' });
 
   const result = db.prepare(`
-    INSERT INTO footprints (exhibition_id, name, message, color, size, x, y, z, rotation)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(req.params.exhibitionId, name, message || '', color || '#ff6b35', size || 1.0, x, y, z, rotation);
+    INSERT INTO footprints
+      (exhibition_id, name, message, color, size, x, y, z, quat_x, quat_y, quat_z, quat_w)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    req.params.exhibitionId,
+    name, message || '', color || '#00cfff', size || 1.0,
+    x, y || 0, z,
+    quat_x || 0, quat_y || 0, quat_z || 0, quat_w != null ? quat_w : 1
+  );
 
-  res.json({ id: result.lastInsertRowid, x, y, z, rotation });
+  res.json({ id: result.lastInsertRowid, x, y: y || 0, z, quat_x, quat_y, quat_z, quat_w });
+});
+
+// Admin: alle Abdrücke einer Ausstellung löschen
+app.delete('/api/footprints/:exhibitionId', (req, res) => {
+  db.prepare('DELETE FROM footprints WHERE exhibition_id = ?').run(req.params.exhibitionId);
+  res.json({ ok: true });
 });
 
 const PORT = process.env.PORT || 3000;
