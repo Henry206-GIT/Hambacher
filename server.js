@@ -15,11 +15,14 @@ db.exec(`
     color TEXT DEFAULT '#ff6b35',
     size REAL DEFAULT 1.0,
     x REAL NOT NULL,
+    y REAL DEFAULT 0,
     z REAL NOT NULL,
     rotation REAL DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )
 `);
+// Migration for existing DBs without y column
+try { db.exec('ALTER TABLE footprints ADD COLUMN y REAL DEFAULT 0'); } catch (_) {}
 
 // Seed some demo footprints for exhibition "1"
 const existing = db.prepare('SELECT COUNT(*) as c FROM footprints WHERE exhibition_id = ?').get('1');
@@ -109,18 +112,25 @@ function findFreePosition(exhibitionId) {
 }
 
 app.post('/api/footprints/:exhibitionId', (req, res) => {
-  const { name, message, color, size } = req.body;
+  const { name, message, color, size, x: cx, y: cy, z: cz } = req.body;
   if (!name) return res.status(400).json({ error: 'Name required' });
 
-  const { x, z } = findFreePosition(req.params.exhibitionId);
-  const rotation  = (Math.random() - 0.5) * 60;
+  let x, y, z, rotation;
+  if (cx !== undefined && cz !== undefined) {
+    // Client-provided position (tap-to-place)
+    x = cx; y = cy || 0; z = cz; rotation = 0;
+  } else {
+    const pos = findFreePosition(req.params.exhibitionId);
+    x = pos.x; y = 0; z = pos.z;
+    rotation = (Math.random() - 0.5) * 60;
+  }
 
   const result = db.prepare(`
-    INSERT INTO footprints (exhibition_id, name, message, color, size, x, z, rotation)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(req.params.exhibitionId, name, message || '', color || '#ff6b35', size || 1.0, x, z, rotation);
+    INSERT INTO footprints (exhibition_id, name, message, color, size, x, y, z, rotation)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(req.params.exhibitionId, name, message || '', color || '#ff6b35', size || 1.0, x, y, z, rotation);
 
-  res.json({ id: result.lastInsertRowid, x, z, rotation });
+  res.json({ id: result.lastInsertRowid, x, y, z, rotation });
 });
 
 const PORT = process.env.PORT || 3000;
