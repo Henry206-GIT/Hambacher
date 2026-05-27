@@ -114,7 +114,8 @@
         new THREE.TorusGeometry(this.data.r, 0.007, 8, 80),
         this.mat
       );
-      ring.position.z = 0.003;
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.003;
       this.el.object3D.add(ring);
       this._ring = ring;
     },
@@ -632,15 +633,16 @@ function spawnHandprint(fp) {
 
   const wrap = document.createElement('a-entity');
   wrap.setAttribute('position', `${fp.x} ${y} ${fp.z}`);
-  wrap.setAttribute('billboard', '');
+  wrap.setAttribute('rotation', `0 ${-(fp.rotation || 0)} 0`);
   wrap.setAttribute('animation__spawn',
     'property: scale; from: 0 0 0; to: 1 1 1; dur: 700; easing: easeOutElastic;');
 
-  /* -- Hologramm Handabdruck (vertikal, zeigt zur Kamera via billboard) -- */
+  /* -- Hologramm Handabdruck (flach auf Boden) -- */
   const plane = document.createElement('a-plane');
   plane.setAttribute('width',    W);
   plane.setAttribute('height',   H);
-  plane.setAttribute('position', '0 0 0');
+  plane.setAttribute('rotation', '-90 0 0');
+  plane.setAttribute('position', '0 0.004 0');
   plane.setAttribute('holo-mat', `color: ${col}`);
   plane.classList.add('fp-plane');
 
@@ -660,18 +662,21 @@ function spawnHandprint(fp) {
   const outerRing = document.createElement('a-torus');
   outerRing.setAttribute('radius',        0.34 * sz);
   outerRing.setAttribute('radius-tubular', 0.004);
-  outerRing.setAttribute('position',      '0 0 0.002');
+  outerRing.setAttribute('rotation',      '-90 0 0');
+  outerRing.setAttribute('position',      '0 0.002 0');
   outerRing.setAttribute('material',
     `color: ${col}; transparent: true; opacity: 0.25;
      emissive: ${col}; emissiveIntensity: 0.8;
      blending: additive; depthWrite: false;`);
   wrap.appendChild(outerRing);
 
-  /* -- Name-Label (über dem Handabdruck, rotiert mit wrap mit) -- */
+  /* -- Name-Label (Billboard, schwebt über Handabdruck) -- */
   const labelWrap = document.createElement('a-entity');
-  labelWrap.setAttribute('position', `0 ${H / 2 + 0.08} 0.01`);
+  labelWrap.setAttribute('position', `0 0.22 0`);
+  labelWrap.setAttribute('billboard', '');
 
   const lblW = Math.min(0.65, 0.12 + fp.name.length * 0.025) * sz;
+
   const lblBg = document.createElement('a-plane');
   lblBg.setAttribute('width',  lblW);
   lblBg.setAttribute('height', '0.09');
@@ -776,11 +781,15 @@ async function init() {
 sceneEl.addEventListener('enter-vr', () => {
   document.getElementById('fallback-video').style.display = 'none';
   document.getElementById('mode-badge').textContent = '📡 AR · Flächenerkennung';
+  // In WebXR: Tap via XR-Select-Events, nicht via Maus-Koordinaten
+  document.getElementById('cam3d').setAttribute('cursor', 'rayOrigin: xrselect; fuse: false');
 });
 sceneEl.addEventListener('exit-vr', () => {
   document.getElementById('fallback-video').style.display = '';
   startFallbackCamera();
   document.getElementById('mode-badge').textContent = '📱 Gyro-Modus';
+  // Zurück zu Maus/Touch-Koordinaten
+  document.getElementById('cam3d').setAttribute('cursor', 'rayOrigin: mouse; fuse: false');
 });
 
 /* ─── Popup: Nachricht anzeigen ─── */
