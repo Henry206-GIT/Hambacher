@@ -416,28 +416,6 @@
   </div>
 </div>
 
-<div id="place-overlay" style="
-  display:none; position:fixed; inset:0; z-index:250;
-  background:rgba(0,5,20,0.55); backdrop-filter:blur(2px);
-  flex-direction:column; align-items:center; justify-content:center;
-  gap:24px; pointer-events:auto;
-">
-  <div style="
-    background:rgba(4,6,24,0.95); border:1px solid rgba(0,200,255,0.3);
-    border-radius:20px; padding:28px 32px; text-align:center; max-width:300px;
-    box-shadow:0 0 40px rgba(0,180,255,0.2);
-  ">
-    <div style="font-size:40px;margin-bottom:12px;">🖐️</div>
-    <div style="font-size:16px;font-weight:700;color:#7af;margin-bottom:8px;">Handabdruck platzieren</div>
-    <div style="font-size:13px;color:#889;line-height:1.6;">Tippe auf eine Fläche –<br>Wand, Boden oder Objekt</div>
-  </div>
-  <button id="place-cancel" style="
-    padding:10px 28px; background:rgba(255,60,60,0.15);
-    border:1px solid rgba(255,60,60,0.3); border-radius:12px;
-    color:#f77; font-size:14px; cursor:pointer;
-  ">Abbrechen</button>
-</div>
-
 <div id="msg-popup" style="
   display:none; position:fixed; z-index:300;
   bottom: 80px; left:50%; transform:translateX(-50%);
@@ -828,70 +806,8 @@ COLORS.forEach(c => {
   colorsEl.appendChild(btn);
 });
 
-/* ─── Tap-to-Place ─── */
-let pendingFp      = null;
-let placeModeActive = false;
-
-function tapTo3D(screenX, screenY) {
-  const canvas = sceneEl.canvas;
-  if (!canvas) return null;
-  const rect  = canvas.getBoundingClientRect();
-  const ndcX  = ((screenX - rect.left) / rect.width)  *  2 - 1;
-  const ndcY  = -((screenY - rect.top)  / rect.height) *  2 + 1;
-  const cam    = document.getElementById('cam3d');
-  if (!cam) return null;
-  const camera = cam.getObject3D('camera');
-  if (!camera) return null;
-  const ray    = new THREE.Raycaster();
-  ray.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
-  const DIST = 2.2;
-  return ray.ray.origin.clone().addScaledVector(ray.ray.direction, DIST);
-}
-
-async function confirmPlacement(screenX, screenY) {
-  if (!placeModeActive || !pendingFp) return;
-  const pos = tapTo3D(screenX, screenY);
-  if (!pos) return;
-
-  placeModeActive = false;
-  document.getElementById('place-overlay').style.display = 'none';
-
-  await fetch(`/api/footprints/${EXHIBITION_ID}`, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ ...pendingFp, x: pos.x, y: pos.y, z: pos.z }),
-  });
-  await loadFootprints();
-  pendingFp = null;
-
-  const t = document.getElementById('toast');
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2500);
-}
-
-// Touch + Click beide abfangen
-sceneEl.addEventListener('loaded', () => {
-  const cv = sceneEl.canvas;
-  cv.addEventListener('touchend', e => {
-    if (!placeModeActive) return;
-    e.preventDefault();
-    const touch = e.changedTouches[0];
-    confirmPlacement(touch.clientX, touch.clientY);
-  }, { passive: false });
-  cv.addEventListener('click', e => {
-    if (!placeModeActive) return;
-    confirmPlacement(e.clientX, e.clientY);
-  });
-});
-
-document.getElementById('place-cancel').onclick = () => {
-  placeModeActive = false;
-  pendingFp = null;
-  document.getElementById('place-overlay').style.display = 'none';
-};
-
 /* ─── Handabdruck hinzufügen ─── */
-document.getElementById('add-btn').onclick = () => {
+document.getElementById('add-btn').onclick = async () => {
   const nameEl = document.getElementById('inp-name');
   const name   = nameEl.value.trim();
   if (!name) {
@@ -900,20 +816,22 @@ document.getElementById('add-btn').onclick = () => {
     setTimeout(() => nameEl.classList.remove('error'), 900);
     return;
   }
-  pendingFp = {
-    name,
-    message: document.getElementById('inp-msg').value.trim(),
-    color:   selectedColor,
-    size:    parseFloat(document.getElementById('size-sl').value),
-  };
+  const message = document.getElementById('inp-msg').value.trim();
+  const size    = parseFloat(document.getElementById('size-sl').value);
 
-  // Sheet einklappen, Place-Overlay zeigen
-  document.getElementById('sheet').classList.add('collapsed');
-  document.getElementById('place-overlay').style.display = 'flex';
-  placeModeActive = true;
+  await fetch(`/api/footprints/${EXHIBITION_ID}`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ name, message, color: selectedColor, size }),
+  });
 
+  await loadFootprints();
   nameEl.value = '';
   document.getElementById('inp-msg').value = '';
+
+  const t = document.getElementById('toast');
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
 };
 </script>
 </body>
