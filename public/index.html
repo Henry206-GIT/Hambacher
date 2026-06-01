@@ -670,7 +670,7 @@
 
 <script>
 /* ─── Konfiguration ─── */
-const APP_VERSION   = 'p11 · anchor-pos+verbose';   // bei jedem Patch hochzählen
+const APP_VERSION   = 'p12 · ar-mode-fix';   // bei jedem Patch hochzählen
 const EXHIBITION_ID = '1';
 const COLORS = [
   '#00cfff','#ff3dac','#39ff14','#ff6b00',
@@ -1038,7 +1038,7 @@ sceneEl.addEventListener('enter-vr', () => {
   // Kalibrier-Button zeigen + beim Start einmal Referenzfläche anbieten.
   document.getElementById('calib-btn').style.display = 'flex';
   // kurz warten bis Hit-Test bereit ist, dann Kalibrierung anbieten
-  setTimeout(() => { if (sceneEl.is('vr-mode')) startCalibration(); }, 800);
+  setTimeout(() => { if (sceneEl.is('ar-mode') || sceneEl.is('vr-mode')) startCalibration(); }, 800);
 });
 sceneEl.addEventListener('exit-vr', () => {
   dbg('◀ exit-vr (AR beendet)');
@@ -1292,7 +1292,9 @@ function updatePreviewHand(col, sz) {
 /* ─── Platzieren-Button: Hand an aktueller Vorschau-Position lassen ─── */
 document.getElementById('place-confirm').onclick = () => {
   if (!placeModeActive || !pendingFp) return;
-  const inVR = !!(sceneEl.is && sceneEl.is('vr-mode'));
+  // A-Frame nutzt im AR den State 'ar-mode' (nicht 'vr-mode') → beide prüfen,
+  // sonst landet jede AR-Platzierung fälschlich im Gyro-Fallback (Boden).
+  const inVR = !!(sceneEl.is && (sceneEl.is('ar-mode') || sceneEl.is('vr-mode')));
   if (inVR) {
     const pose = sceneEl.components['fp-hit-test']?.lastPose;
     dbg('confirm-btn: inVR, hatPose=', !!pose);
@@ -1371,7 +1373,7 @@ document.getElementById('add-btn').onclick = () => {
   placeModeActive = true;
   updatePreviewHand(pendingFp.color, pendingFp.size);
   document.getElementById('place-overlay').style.display = 'flex';
-  dbg('add-btn: place-mode an, inVR=', !!(sceneEl.is && sceneEl.is('vr-mode')));
+  dbg('add-btn: place-mode an, inVR=', !!(sceneEl.is && (sceneEl.is('ar-mode') || sceneEl.is('vr-mode'))));
 };
 </script>
 </body>
