@@ -734,7 +734,7 @@
 
 <script>
 /* ─── Konfiguration ─── */
-const APP_VERSION   = 'p17 · detect-hints';   // bei jedem Patch hochzählen
+const APP_VERSION   = 'p18 · popup-close-fix';   // bei jedem Patch hochzählen
 const EXHIBITION_ID = '1';
 const COLORS = [
   '#00cfff','#ff3dac','#39ff14','#ff6b00',
@@ -1120,8 +1120,9 @@ sceneEl.addEventListener('exit-vr', () => {
 });
 
 /* ─── Popup: Nachricht anzeigen ─── */
-let popupTimer = null;
-let popupOpen  = false;
+let popupTimer      = null;
+let popupGuardTimer = null;
+let popupOpen       = false;
 
 function showPopup(fp) {
   const popup = document.getElementById('msg-popup');
@@ -1138,15 +1139,22 @@ function showPopup(fp) {
 function hidePopup() {
   document.getElementById('msg-popup').style.display = 'none';
   document.getElementById('popup-backdrop').style.display = 'none';
-  popupOpen = false;
   clearTimeout(popupTimer);
+  // popupOpen NICHT sofort freigeben: der Schließen-Tap erzeugt im WebXR noch
+  // ein XR-select, das sonst gleich wieder einen Abdruck triggert. Erst nach
+  // kurzer Sperre wieder freigeben.
+  clearTimeout(popupGuardTimer);
+  popupGuardTimer = setTimeout(() => { popupOpen = false; }, 450);
 }
 
 document.getElementById('popup-close').onclick = hidePopup;
 // Backdrop fängt Taps ab → schließt Popup, Abdrücke dahinter bleiben unberührt
 document.getElementById('popup-backdrop').onclick = hidePopup;
-// im WebXR-dom-overlay den XR-Select unterdrücken, solange Popup offen ist
-document.getElementById('popup-backdrop').addEventListener('beforexrselect', e => e.preventDefault());
+// im WebXR-dom-overlay den XR-Select global unterdrücken, solange ein Popup
+// offen ist (auch beim Tap auf den Schließen-Button) → kein Durchschlagen.
+document.getElementById('ui').addEventListener('beforexrselect', e => {
+  if (popupOpen) e.preventDefault();
+});
 
 /* ─── Reset-Tracking-Button ─── */
 let resetBusy = false;
