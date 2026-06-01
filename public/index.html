@@ -227,6 +227,24 @@
         const frame  = xr.getFrame?.();
         if (!frame) return;
         const ref     = xr.getReferenceSpace();
+
+        // #fp-root jeden Frame an den echten XR-Anchor binden (drift-stabil).
+        // ARCore korrigiert die Anchor-Pose laufend → Hände bleiben real fix.
+        if (window.xrAnchor) {
+          const ap = frame.getPose(window.xrAnchor.anchorSpace, ref);
+          if (ap) {
+            const root = document.getElementById('fp-root').object3D;
+            const t = ap.transform;
+            root.position.set(t.position.x, t.position.y, t.position.z);
+            root.quaternion.set(t.orientation.x, t.orientation.y, t.orientation.z, t.orientation.w);
+            if (window.vlog && ((this._af = (this._af || 0) + 1) % 60 === 0)) {
+              window.vlog('anchor-track', { pos: [t.position.x, t.position.y, t.position.z] });
+            }
+          } else if (window.vlog && ((this._af = (this._af || 0) + 1) % 60 === 0)) {
+            window.vlog('anchor-track', { lost: true });
+          }
+        }
+
         const results = frame.getHitTestResults(this.hitTestSource);
         const reticle = document.getElementById('reticle');
         if (!reticle) return;
@@ -240,7 +258,8 @@
         if (results.length) {
           const pose = results[0].getPose(ref);
           if (pose) {
-            this.lastPose = pose;
+            this.lastPose   = pose;
+            this.lastResult = results[0];   // für createAnchor() bei Kalibrierung
             const p = pose.transform.position;
             const o = pose.transform.orientation;
             reticle.object3D.position.set(p.x, p.y + 0.002, p.z);
@@ -483,7 +502,7 @@
   renderer="alpha: true; antialias: true; colorManagement: true; sortObjects: true"
   loading-screen="enabled: false"
   device-orientation-permission-ui="enabled: false"
-  webxr="requiredFeatures: local; optionalFeatures: local-floor,dom-overlay,hit-test; overlayElement: #ui;"
+  webxr="requiredFeatures: local; optionalFeatures: local-floor,dom-overlay,hit-test,anchors,plane-detection; overlayElement: #ui;"
   fp-hit-test
   cursor__mouse="rayOrigin: mouse; fuse: false"
   cursor__xrselect="rayOrigin: xrselect; fuse: false"
@@ -670,7 +689,7 @@
 
 <script>
 /* ─── Konfiguration ─── */
-const APP_VERSION   = 'p14 · uniform-size';   // bei jedem Patch hochzählen
+const APP_VERSION   = 'p15 · xr-anchor';   // bei jedem Patch hochzählen
 const EXHIBITION_ID = '1';
 const COLORS = [
   '#00cfff','#ff3dac','#39ff14','#ff6b00',
@@ -1048,6 +1067,8 @@ sceneEl.addEventListener('exit-vr', () => {
   document.getElementById('calib-btn').style.display = 'none';
   calibMode = false;
   document.getElementById('calib-overlay').style.display = 'none';
+  window.xrAnchor = null;   // Anchor ist session-gebunden → bei AR-Ende verwerfen
+  anchorSet = false;
 });
 
 /* ─── Popup: Nachricht anzeigen ─── */
@@ -1330,12 +1351,37 @@ function endCalibration() {
 
 document.getElementById('calib-confirm').onclick = () => {
   if (!calibMode) return;
-  const pose = sceneEl.components['fp-hit-test']?.lastPose;
-  dbg('calib-confirm: hatPose=', !!pose);
+  const ht     = sceneEl.components['fp-hit-test'];
+  const pose   = ht?.lastPose;
+  const result = ht?.lastResult;
+  dbg('calib-confirm: hatPose=', !!pose, ' canAnchor=', !!(result && result.createAnchor));
   if (!pose) { dbg('  → keine Fläche erkannt, Handy bewegen'); return; }
-  setAnchorFromPose(pose);
+
+  // alten Anchor freigeben (ARCore-Budget)
+  if (window.xrAnchor && window.xrAnchor.delete) { try { window.xrAnchor.delete(); } catch (_) {} }
+  window.xrAnchor = null;
+
+  // Bevorzugt einen ECHTEN XR-Anchor erstellen (ARCore hält ihn drift-stabil).
+  // Fallback: statische Pose, falls das Gerät keine Anchors unterstützt.
+  if (result && result.createAnchor) {
+    result.createAnchor().then(anchor => {
+      window.xrAnchor = anchor;
+      anchorSet = true;
+      setAnchorFromPose(pose);   // sofortige Startpose; Tick übernimmt danach den Anchor
+      dbg('🎯 XR-Anchor erstellt (drift-stabil)');
+      loadFootprints();
+    }).catch(e => {
+      window.xrAnchor = null;
+      dbg('createAnchor FAIL → statischer Anchor:', e && e.message);
+      setAnchorFromPose(pose);
+      loadFootprints();
+    });
+  } else {
+    window.xrAnchor = null;
+    setAnchorFromPose(pose);
+    loadFootprints();
+  }
   endCalibration();
-  loadFootprints();   // Hände relativ zum neuen Anchor neu positionieren
 };
 
 document.getElementById('calib-skip').onclick = () => {
