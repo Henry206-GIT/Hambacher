@@ -554,56 +554,59 @@
     </div>
     <button id="add-btn">🖐️ Handabdruck hinterlassen</button>
   </div>
+  </div><!-- /#sheet -->
 
-  <!-- Place-Overlay (innerhalb #ui für dom-overlay) -->
+  <!-- Place-Overlay: direkt in #ui (NICHT in #sheet — dessen transform
+       würde die fixed-Position nach unten verschieben). Nicht-blockierend
+       (pointer-events:none), damit man den Raum sieht und die Wand antippen
+       kann; nur der Abbrechen-Button fängt Taps. -->
   <div id="place-overlay" style="
     display:none; position:fixed; inset:0; z-index:250;
-    background:rgba(0,5,20,0.45); backdrop-filter:blur(2px);
-    -webkit-backdrop-filter:blur(2px);
     flex-direction:column; align-items:center; justify-content:center;
-    gap:20px; pointer-events:auto;
+    gap:18px; pointer-events:none;
   ">
     <div style="
-      background:rgba(4,6,24,0.95); border:1px solid rgba(0,200,255,0.3);
-      border-radius:20px; padding:24px 28px; text-align:center; max-width:280px;
+      background:rgba(4,6,24,0.92); border:1px solid rgba(0,200,255,0.3);
+      border-radius:20px; padding:20px 26px; text-align:center; max-width:280px;
       box-shadow:0 0 40px rgba(0,180,255,0.2);
     ">
-      <div style="font-size:36px;margin-bottom:10px;">🖐️</div>
+      <div style="font-size:34px;margin-bottom:8px;">🖐️</div>
       <div style="font-size:15px;font-weight:700;color:#7af;margin-bottom:6px;">Fläche antippen</div>
-      <div style="font-size:12px;color:#889;line-height:1.6;">Zeige auf Boden, Wand oder<br>Objekt und tippe darauf</div>
+      <div style="font-size:12px;color:#9ab;line-height:1.6;">Richte die Kamera auf Wand,<br>Boden oder Objekt und tippe darauf</div>
     </div>
     <button id="place-cancel" style="
-      padding:9px 26px; background:rgba(255,60,60,0.12);
-      border:1px solid rgba(255,60,60,0.3); border-radius:12px;
-      color:#f77; font-size:13px; cursor:pointer; pointer-events:auto;
+      pointer-events:auto;
+      padding:9px 26px; background:rgba(255,60,60,0.15);
+      border:1px solid rgba(255,60,60,0.4); border-radius:12px;
+      color:#f88; font-size:13px; cursor:pointer;
     ">Abbrechen</button>
   </div>
 
-  <!-- Tap-to-reveal Popup (innerhalb #ui für dom-overlay) -->
+  <!-- Tap-to-reveal Popup: direkt in #ui, vertikal zentriert -->
   <div id="msg-popup" style="
-  display:none; position:fixed; z-index:300;
-  bottom: 80px; left:50%; transform:translateX(-50%);
-  background:rgba(4,6,24,0.97); backdrop-filter:blur(20px);
-  -webkit-backdrop-filter:blur(20px);
-  border:1px solid rgba(0,200,255,0.25); border-radius:16px;
-  padding:16px 22px; min-width:220px; max-width:80vw;
-  text-align:center; pointer-events:auto;
-  box-shadow: 0 0 30px rgba(0,180,255,0.2);
-">
-  <div id="popup-name" style="font-size:16px;font-weight:700;color:#7af;margin-bottom:6px;"></div>
-  <div id="popup-msg"  style="font-size:14px;color:#cef;line-height:1.5;"></div>
-  <button id="popup-close" style="
-    margin-top:12px; padding:6px 18px;
-    background:rgba(0,200,255,0.12); border:1px solid rgba(0,200,255,0.2);
-    border-radius:8px; color:#7af; font-size:13px; cursor:pointer;
-  ">Schließen</button>
+    display:none; position:fixed; z-index:300;
+    top:50%; left:50%; transform:translate(-50%,-50%);
+    background:rgba(4,6,24,0.97); backdrop-filter:blur(20px);
+    -webkit-backdrop-filter:blur(20px);
+    border:1px solid rgba(0,200,255,0.25); border-radius:16px;
+    padding:16px 22px; min-width:220px; max-width:80vw;
+    text-align:center; pointer-events:auto;
+    box-shadow: 0 0 30px rgba(0,180,255,0.2);
+  ">
+    <div id="popup-name" style="font-size:16px;font-weight:700;color:#7af;margin-bottom:6px;"></div>
+    <div id="popup-msg"  style="font-size:14px;color:#cef;line-height:1.5;"></div>
+    <button id="popup-close" style="
+      margin-top:12px; padding:6px 18px;
+      background:rgba(0,200,255,0.12); border:1px solid rgba(0,200,255,0.2);
+      border-radius:8px; color:#7af; font-size:13px; cursor:pointer;
+    ">Schließen</button>
   </div>
 
-</div>
+</div><!-- /#ui -->
 
 <script>
 /* ─── Konfiguration ─── */
-const APP_VERSION   = 'p7 · cursor→scene';   // bei jedem Patch hochzählen
+const APP_VERSION   = 'p8 · ui-fix';   // bei jedem Patch hochzählen
 const EXHIBITION_ID = '1';
 const COLORS = [
   '#00cfff','#ff3dac','#39ff14','#ff6b00',
@@ -1135,7 +1138,7 @@ document.getElementById('place-cancel').onclick = () => {
   pendingFp = null;
   document.getElementById('place-overlay').style.display = 'none';
   if (gyroPlaceHandler) {
-    document.getElementById('place-overlay').removeEventListener('click', gyroPlaceHandler);
+    document.querySelector('.ar-stage').removeEventListener('click', gyroPlaceHandler);
     gyroPlaceHandler = null;
   }
 };
@@ -1169,18 +1172,14 @@ document.getElementById('add-btn').onclick = () => {
     placeModeActive = true;
     document.getElementById('place-overlay').style.display = 'flex';
   } else {
-    // Gyro-Modus: Platzierung auf Boden direkt per Touch
+    // Gyro-Modus: Platzierung auf Boden direkt per Touch.
     placeModeActive = true;
-    const overlay = document.getElementById('place-overlay');
-    overlay.style.display = 'flex';
-    // Tap auf Overlay → Boden-Platzierung (y=0, Quaternion identity = flach).
-    // Das Overlay liegt über der AR-Bühne, daher Listener hier statt auf .ar-stage.
-    const placeOnFloor = (e) => {
-      // Abbrechen-Button nicht als Platzierung werten
-      if (e.target.closest('#place-cancel')) return;
+    document.getElementById('place-overlay').style.display = 'flex';
+    // Overlay ist nicht-blockierend → Tap landet auf der AR-Bühne.
+    const stage = document.querySelector('.ar-stage');
+    const placeOnFloor = () => {
       if (!placeModeActive) return;
-      e.stopPropagation();
-      overlay.removeEventListener('click', placeOnFloor);
+      stage.removeEventListener('click', placeOnFloor);
       gyroPlaceHandler = null;
       // Kameraposition als Basis, 2m vor der Kamera auf Bodenhöhe
       const cam = document.getElementById('cam3d');
@@ -1188,13 +1187,13 @@ document.getElementById('add-btn').onclick = () => {
       const pos = cam.object3D.position;
       const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.object3D.quaternion);
       dir.y = 0; dir.normalize();
-      confirmPlacement(
+      confirmPlacement(   // setzt placeModeActive=false und versteckt das Overlay
         pos.x + dir.x * 2, 0, pos.z + dir.z * 2,
         0, 0, 0, 1  // identity quaternion = flach auf Boden
       );
     };
     gyroPlaceHandler = placeOnFloor;
-    overlay.addEventListener('click', placeOnFloor);
+    stage.addEventListener('click', placeOnFloor);
   }
 };
 </script>
