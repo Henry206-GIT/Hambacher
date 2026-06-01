@@ -230,10 +230,11 @@
         const results = frame.getHitTestResults(this.hitTestSource);
         const reticle = document.getElementById('reticle');
         if (!reticle) return;
-        // Vorschau-Hand nur während der Platzierung zeigen.
-        // placeModeActive ist ein globales let aus dem Body-Script (geteilte
-        // Lexical-Umgebung); Zugriff steht sicher im try/catch.
-        const placing = (typeof placeModeActive !== 'undefined') && placeModeActive;
+        // Vorschau-Hand zeigen während Platzierung ODER Kalibrierung.
+        // placeModeActive/calibMode sind globale let aus dem Body-Script
+        // (geteilte Lexical-Umgebung); Zugriff steht sicher im try/catch.
+        const placing = ((typeof placeModeActive !== 'undefined') && placeModeActive)
+                     || ((typeof calibMode      !== 'undefined') && calibMode);
         if (results.length) {
           const pose = results[0].getPose(ref);
           if (pose) {
@@ -535,6 +536,13 @@
     <div id="toast">Handabdruck hinterlassen! 🖐️</div>
     <div id="mode-badge">· · ·</div>
     <button id="reset-btn" title="Tracking zurücksetzen">↺ Reset</button>
+    <button id="calib-btn" title="Referenzfläche neu wählen" style="
+      position:absolute; bottom:44px; right:12px;
+      background:rgba(0,10,30,0.75); border:1px solid rgba(0,200,255,0.25);
+      border-radius:10px; padding:5px 12px; font-size:12px; color:#7af;
+      cursor:pointer; pointer-events:auto; display:none;
+      align-items:center; gap:5px;
+    ">🎯 Kalibrieren</button>
   </div>
 
   <!-- Bottom Sheet (innerhalb #ui für dom-overlay) -->
@@ -597,6 +605,38 @@
     </div>
   </div>
 
+  <!-- Kalibrier-Overlay: Referenzfläche (Anchor) für alle Hände wählen -->
+  <div id="calib-overlay" style="
+    display:none; position:fixed; inset:0; z-index:260;
+    flex-direction:column; align-items:center; justify-content:space-between;
+    padding:74px 20px max(26px, env(safe-area-inset-bottom));
+    pointer-events:none;
+  ">
+    <div style="
+      background:rgba(4,6,24,0.92); border:1px solid rgba(0,200,255,0.3);
+      border-radius:18px; padding:14px 20px; text-align:center; max-width:300px;
+      box-shadow:0 0 40px rgba(0,180,255,0.2);
+    ">
+      <div style="font-size:14px;font-weight:700;color:#7af;margin-bottom:4px;">🎯 Referenzfläche wählen</div>
+      <div style="font-size:12px;color:#9ab;line-height:1.5;">Richte das Handy auf die Wand/den Boden,<br>an dem die Hände verankert sein sollen.</div>
+    </div>
+    <div style="display:flex; gap:12px;">
+      <button id="calib-skip" style="
+        pointer-events:auto;
+        padding:12px 22px; background:rgba(255,255,255,0.08);
+        border:1px solid rgba(255,255,255,0.2); border-radius:12px;
+        color:#bcd; font-size:14px; cursor:pointer;
+      ">Überspringen</button>
+      <button id="calib-confirm" style="
+        pointer-events:auto;
+        padding:12px 30px; background:linear-gradient(135deg,#0fc,#0a9);
+        border:none; border-radius:12px; font-weight:700;
+        color:#001; font-size:15px; cursor:pointer;
+        box-shadow:0 0 24px rgba(0,220,180,0.35);
+      ">✓ Verankern</button>
+    </div>
+  </div>
+
   <!-- Tap-to-reveal Popup: direkt in #ui, vertikal zentriert -->
   <div id="msg-popup" style="
     display:none; position:fixed; z-index:300;
@@ -621,7 +661,7 @@
 
 <script>
 /* ─── Konfiguration ─── */
-const APP_VERSION   = 'p9 · hand-preview';   // bei jedem Patch hochzählen
+const APP_VERSION   = 'p10 · anchor';   // bei jedem Patch hochzählen
 const EXHIBITION_ID = '1';
 const COLORS = [
   '#00cfff','#ff3dac','#39ff14','#ff6b00',
@@ -946,12 +986,19 @@ sceneEl.addEventListener('enter-vr', () => {
   document.getElementById('mode-badge').textContent = '📡 AR · Flächenerkennung';
   // Cursor mouse+xrselect sind deklarativ gesetzt (kein Laufzeit-Umschalten,
   // das verursachte den 'reading xr'-Crash).
+  // Kalibrier-Button zeigen + beim Start einmal Referenzfläche anbieten.
+  document.getElementById('calib-btn').style.display = 'flex';
+  // kurz warten bis Hit-Test bereit ist, dann Kalibrierung anbieten
+  setTimeout(() => { if (sceneEl.is('vr-mode')) startCalibration(); }, 800);
 });
 sceneEl.addEventListener('exit-vr', () => {
   dbg('◀ exit-vr (AR beendet)');
   document.getElementById('fallback-video').style.display = '';
   startFallbackCamera();
   document.getElementById('mode-badge').textContent = '📱 Gyro-Modus';
+  document.getElementById('calib-btn').style.display = 'none';
+  calibMode = false;
+  document.getElementById('calib-overlay').style.display = 'none';
 });
 
 /* ─── Popup: Nachricht anzeigen ─── */
@@ -1096,27 +1143,64 @@ COLORS.forEach(c => {
   colorsEl.appendChild(btn);
 });
 
-/* ─── Platzierung ─── */
+/* ─── Platzierung & Kalibrierung (Anchor) ─── */
 let pendingFp        = null;
 let placeModeActive  = false;
+let calibMode        = false;
+let anchorSet        = false;
+
+/* Welt-Pose → Koordinaten relativ zum Anchor (#fp-root). Bei Identity-Anchor
+   unverändert. So bewegt Neukalibrieren alle Hände als Gruppe mit. */
+function worldToAnchorLocal(px, py, pz, qx, qy, qz, qw) {
+  const root = document.getElementById('fp-root').object3D;
+  root.updateMatrixWorld(true);
+  const world = new THREE.Matrix4().compose(
+    new THREE.Vector3(px, py, pz),
+    new THREE.Quaternion(qx, qy, qz, qw),
+    new THREE.Vector3(1, 1, 1)
+  );
+  const local = new THREE.Matrix4().copy(root.matrixWorld).invert().multiply(world);
+  const p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
+  local.decompose(p, q, s);
+  return { x: p.x, y: p.y, z: p.z, quat_x: q.x, quat_y: q.y, quat_z: q.z, quat_w: q.w };
+}
+
+/* Anchor (#fp-root) auf eine getippte Fläche setzen → alle Hände hängen daran */
+function setAnchorFromPose(pose) {
+  const root = document.getElementById('fp-root').object3D;
+  const p = pose.transform.position, o = pose.transform.orientation;
+  root.position.set(p.x, p.y, p.z);
+  root.quaternion.set(o.x, o.y, o.z, o.w);
+  anchorSet = true;
+  dbg('🎯 Anchor gesetzt @', p.x.toFixed(2), p.y.toFixed(2), p.z.toFixed(2));
+}
+
+/* Kalibrier-Modus starten (beim AR-Start oder via Kalibrieren-Button) */
+function startCalibration() {
+  calibMode = true;
+  placeModeActive = false;
+  updatePreviewHand('#00ffcc', 1.0);   // neutrale Vorschau als Anchor-Marker
+  document.getElementById('place-overlay').style.display = 'none';
+  document.getElementById('calib-overlay').style.display = 'flex';
+  dbg('Kalibrierung gestartet');
+}
 
 async function confirmPlacement(x, y, z, qx, qy, qz, qw) {
   if (!placeModeActive || !pendingFp) return;
   placeModeActive = false;
   document.getElementById('place-overlay').style.display = 'none';
   document.getElementById('reticle').setAttribute('visible', false);
-  dbg('confirmPlacement: POST', { x, y, z });
+
+  // Welt-Pose der Platzierung in Anchor-relative Koordinaten umrechnen,
+  // damit Neukalibrierung alle Hände gemeinsam verschiebt.
+  const rel = worldToAnchorLocal(x, y || 0, z, qx || 0, qy || 0, qz || 0, qw != null ? qw : 1);
+  dbg('confirmPlacement: POST (anchor-rel)', { x: rel.x, y: rel.y, z: rel.z });
 
   try {
     const res = await fetch(`/api/footprints/${EXHIBITION_ID}`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({
-        ...pendingFp,
-        x, y: y || 0, z,
-        quat_x: qx || 0, quat_y: qy || 0, quat_z: qz || 0,
-        quat_w: qw != null ? qw : 1,
-      }),
+      body:    JSON.stringify({ ...pendingFp, ...rel }),
     });
     dbg('  POST status=', res.status);
     await loadFootprints();
@@ -1170,6 +1254,30 @@ document.getElementById('place-cancel').onclick = () => {
   document.getElementById('reticle').setAttribute('visible', false);
 };
 
+/* ─── Kalibrierung: Verankern / Überspringen / Button ─── */
+function endCalibration() {
+  calibMode = false;
+  document.getElementById('calib-overlay').style.display = 'none';
+  document.getElementById('reticle').setAttribute('visible', false);
+}
+
+document.getElementById('calib-confirm').onclick = () => {
+  if (!calibMode) return;
+  const pose = sceneEl.components['fp-hit-test']?.lastPose;
+  dbg('calib-confirm: hatPose=', !!pose);
+  if (!pose) { dbg('  → keine Fläche erkannt, Handy bewegen'); return; }
+  setAnchorFromPose(pose);
+  endCalibration();
+  loadFootprints();   // Hände relativ zum neuen Anchor neu positionieren
+};
+
+document.getElementById('calib-skip').onclick = () => {
+  dbg('calib übersprungen');
+  endCalibration();
+};
+
+document.getElementById('calib-btn').onclick = () => startCalibration();
+
 /* ─── Handabdruck hinzufügen ─── */
 document.getElementById('add-btn').onclick = () => {
   const nameEl = document.getElementById('inp-name');
@@ -1194,6 +1302,7 @@ document.getElementById('add-btn').onclick = () => {
 
   // Platzier-Modus: Vorschau-Hand (Farbe/Größe der Auswahl) erscheint auf der
   // erkannten Fläche und folgt ihr; „Platzieren" lässt sie dort.
+  endCalibration();   // falls Kalibrierung noch offen
   placeModeActive = true;
   updatePreviewHand(pendingFp.color, pendingFp.size);
   document.getElementById('place-overlay').style.display = 'flex';
