@@ -235,20 +235,29 @@
         // (geteilte Lexical-Umgebung); Zugriff steht sicher im try/catch.
         const placing = ((typeof placeModeActive !== 'undefined') && placeModeActive)
                      || ((typeof calibMode      !== 'undefined') && calibMode);
+        this._vf = (this._vf || 0) + 1;
+        const verbose = placing && window.vlog && (this._vf % 20 === 0); // ~3x/s im Place/Calib
         if (results.length) {
           const pose = results[0].getPose(ref);
           if (pose) {
             this.lastPose = pose;
             const p = pose.transform.position;
+            const o = pose.transform.orientation;
             reticle.object3D.position.set(p.x, p.y + 0.002, p.z);
-            reticle.object3D.quaternion.set(
-              pose.transform.orientation.x, pose.transform.orientation.y,
-              pose.transform.orientation.z, pose.transform.orientation.w
-            );
+            reticle.object3D.quaternion.set(o.x, o.y, o.z, o.w);
             reticle.setAttribute('visible', placing);
+            if (verbose) {
+              const n = window.normalOf(o.x, o.y, o.z, o.w);
+              window.vlog('hit', {
+                cnt: results.length, surf: window.classifyNormal(n),
+                pos: [p.x, p.y, p.z], quat: [o.x, o.y, o.z, o.w],
+                normal: [n.x, n.y, n.z], placeMode: !!placeModeActive, calib: !!calibMode
+              });
+            }
           }
         } else {
           reticle.setAttribute('visible', false);
+          if (verbose) window.vlog('hit', { cnt: 0, placeMode: !!placeModeActive, calib: !!calibMode });
         }
       } catch (e) {
         if (!this._loggedTickErr) {
@@ -661,7 +670,7 @@
 
 <script>
 /* ─── Konfiguration ─── */
-const APP_VERSION   = 'p10 · anchor';   // bei jedem Patch hochzählen
+const APP_VERSION   = 'p11 · anchor-pos+verbose';   // bei jedem Patch hochzählen
 const EXHIBITION_ID = '1';
 const COLORS = [
   '#00cfff','#ff3dac','#39ff14','#ff6b00',
@@ -772,6 +781,13 @@ function spawnHandprint(fp) {
     const qx = fp.quat_x || 0, qy = fp.quat_y || 0,
           qz = fp.quat_z || 0, qw = fp.quat_w != null ? fp.quat_w : 1;
     wrap.object3D.quaternion.set(qx, qy, qz, qw);
+    if (window.vlog) {
+      wrap.object3D.updateMatrixWorld(true);
+      const wp = new THREE.Vector3(); wrap.object3D.getWorldPosition(wp);
+      const n = normalOf(qx, qy, qz, qw);
+      vlog('spawn', { id: fp.id, localPos: [fp.x, y, fp.z], worldPos: [wp.x, wp.y, wp.z],
+        surf: classifyNormal(n), color: col, size: sz });
+    }
   }, { once: true });
 
   /* -- Hologramm Handabdruck (flach auf Boden) -- */
@@ -862,11 +878,17 @@ function buildGrid() {
 async function loadFootprints() {
   try {
     const data = await fetch(`/api/footprints/${EXHIBITION_ID}`).then(r => r.json());
+    const fresh = data.filter(d => !renderedIds.has(d.id)).length;
+    if (window.vlog) {
+      const root = document.getElementById('fp-root').object3D;
+      vlog('load', { total: data.length, neu: fresh, anchorSet: !!(typeof anchorSet!=='undefined'&&anchorSet),
+        anchorPos: [root.position.x, root.position.y, root.position.z] });
+    }
     data.forEach(spawnHandprint);
     document.getElementById('badge').textContent = `${data.length} Handabdrücke`;
     const sc = document.getElementById('sheet-peek-count');
     if (sc) sc.textContent = `${data.length} Abdrücke`;
-  } catch (e) { console.warn('load error', e); }
+  } catch (e) { dbg('load error:', e && e.message); }
 }
 
 /* ─── Debug-Logging (On-Screen + Server) ─── */
@@ -886,6 +908,33 @@ function dbg(...args) {
   // sendBeacon überlebt Page-Freeze/Unload besser als fetch
   try { navigator.sendBeacon('/api/log', msg); } catch (_) {}
 }
+
+/* ─── Verbose-Logging (maschinell, max. Daten) ─── */
+const f3 = n => (typeof n === 'number' ? n.toFixed(3) : String(n));
+// kompakte key=val-Zeile aus einem Objekt
+function vlog(tag, obj) {
+  let s = tag;
+  for (const k in obj) {
+    const v = obj[k];
+    if (Array.isArray(v))       s += ` ${k}=[${v.map(f3).join(',')}]`;
+    else if (typeof v === 'number') s += ` ${k}=${f3(v)}`;
+    else                        s += ` ${k}=${v}`;
+  }
+  dbg(s);
+}
+// Flächennormale aus Quaternion + Klassifikation (wall/floor/ceil)
+function normalOf(qx, qy, qz, qw) {
+  const n = new THREE.Vector3(0, 1, 0)
+    .applyQuaternion(new THREE.Quaternion(qx || 0, qy || 0, qz || 0, qw != null ? qw : 1));
+  return n;
+}
+function classifyNormal(n) {
+  if (n.y > 0.7)  return 'floor';
+  if (n.y < -0.7) return 'ceil';
+  return 'wall';
+}
+window.vlog = vlog; window.normalOf = normalOf; window.classifyNormal = classifyNormal;
+
 window.addEventListener('error', e =>
   dbg('❌ JS ERROR:', e.message, '@', (e.filename || '') + ':' + (e.lineno || '')));
 window.addEventListener('unhandledrejection', e =>
@@ -1165,14 +1214,22 @@ function worldToAnchorLocal(px, py, pz, qx, qy, qz, qw) {
   return { x: p.x, y: p.y, z: p.z, quat_x: q.x, quat_y: q.y, quat_z: q.z, quat_w: q.w };
 }
 
-/* Anchor (#fp-root) auf eine getippte Fläche setzen → alle Hände hängen daran */
+/* Anchor (#fp-root) auf einen getippten Punkt setzen — NUR Position, keine
+   Rotation. Sonst würde die ganze Hand-Gruppe um die Flächennormale gedreht
+   (Wand-Hit ⇒ 90°-Drehung ⇒ Abdrücke fliegen weg). Die Wand-Ausrichtung
+   bleibt pro Abdruck über dessen gespeicherte Pose erhalten. */
 function setAnchorFromPose(pose) {
   const root = document.getElementById('fp-root').object3D;
   const p = pose.transform.position, o = pose.transform.orientation;
   root.position.set(p.x, p.y, p.z);
-  root.quaternion.set(o.x, o.y, o.z, o.w);
+  root.quaternion.set(0, 0, 0, 1);   // Identity-Orientierung
+  root.updateMatrixWorld(true);
   anchorSet = true;
-  dbg('🎯 Anchor gesetzt @', p.x.toFixed(2), p.y.toFixed(2), p.z.toFixed(2));
+  const n = normalOf(o.x, o.y, o.z, o.w);
+  vlog('🎯 anchor-set', {
+    pos: [p.x, p.y, p.z], hitQuat: [o.x, o.y, o.z, o.w],
+    hitNormal: [n.x, n.y, n.z], hitSurf: classifyNormal(n)
+  });
 }
 
 /* Kalibrier-Modus starten (beim AR-Start oder via Kalibrieren-Button) */
@@ -1193,8 +1250,16 @@ async function confirmPlacement(x, y, z, qx, qy, qz, qw) {
 
   // Welt-Pose der Platzierung in Anchor-relative Koordinaten umrechnen,
   // damit Neukalibrierung alle Hände gemeinsam verschiebt.
-  const rel = worldToAnchorLocal(x, y || 0, z, qx || 0, qy || 0, qz || 0, qw != null ? qw : 1);
-  dbg('confirmPlacement: POST (anchor-rel)', { x: rel.x, y: rel.y, z: rel.z });
+  const rel  = worldToAnchorLocal(x, y || 0, z, qx || 0, qy || 0, qz || 0, qw != null ? qw : 1);
+  const root = document.getElementById('fp-root').object3D;
+  const n    = normalOf(qx, qy, qz, qw);
+  vlog('place', {
+    worldPos: [x, y || 0, z], worldQuat: [qx || 0, qy || 0, qz || 0, qw != null ? qw : 1],
+    normal: [n.x, n.y, n.z], surf: classifyNormal(n),
+    anchorPos: [root.position.x, root.position.y, root.position.z], anchorSet: !!anchorSet,
+    relPos: [rel.x, rel.y, rel.z], relQuat: [rel.quat_x, rel.quat_y, rel.quat_z, rel.quat_w],
+    color: pendingFp.color, size: pendingFp.size
+  });
 
   try {
     const res = await fetch(`/api/footprints/${EXHIBITION_ID}`, {
