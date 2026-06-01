@@ -202,37 +202,47 @@
       });
     },
     _setup: async function () {
+      const dl = window.dbg || function () {};
       const session = this.el.sceneEl.renderer.xr.getSession();
-      if (!session) return;
+      if (!session) { dl('ar-hit-test._setup: keine Session'); return; }
       try {
         const vs = await session.requestReferenceSpace('viewer');
         this.hitTestSource = await session.requestHitTestSource({ space: vs });
         session.addEventListener('end', () => { this.hitTestSource = null; });
-      } catch (e) { console.warn('hit-test unavailable', e); }
+        dl('ar-hit-test._setup: hitTestSource bereit');
+      } catch (e) { dl('ar-hit-test._setup FAIL:', e && (e.name + ' ' + e.message)); }
     },
     tick: function () {
       if (!this.hitTestSource) return;
-      const xr     = this.el.sceneEl.renderer.xr;
-      const frame  = xr.getFrame?.();
-      if (!frame) return;
-      const ref     = xr.getReferenceSpace();
-      const results = frame.getHitTestResults(this.hitTestSource);
-      const reticle = document.getElementById('reticle');
-      if (!reticle) return;
-      if (results.length) {
-        const pose = results[0].getPose(ref);
-        if (pose) {
-          this.lastPose = pose;
-          const p = pose.transform.position;
-          reticle.object3D.position.set(p.x, p.y + 0.002, p.z);
-          reticle.object3D.quaternion.set(
-            pose.transform.orientation.x, pose.transform.orientation.y,
-            pose.transform.orientation.z, pose.transform.orientation.w
-          );
-          reticle.setAttribute('visible', true);
+      // try/catch: ein throw im tick würde sonst den ganzen Render-Loop killen → Freeze
+      try {
+        const xr     = this.el.sceneEl.renderer.xr;
+        const frame  = xr.getFrame?.();
+        if (!frame) return;
+        const ref     = xr.getReferenceSpace();
+        const results = frame.getHitTestResults(this.hitTestSource);
+        const reticle = document.getElementById('reticle');
+        if (!reticle) return;
+        if (results.length) {
+          const pose = results[0].getPose(ref);
+          if (pose) {
+            this.lastPose = pose;
+            const p = pose.transform.position;
+            reticle.object3D.position.set(p.x, p.y + 0.002, p.z);
+            reticle.object3D.quaternion.set(
+              pose.transform.orientation.x, pose.transform.orientation.y,
+              pose.transform.orientation.z, pose.transform.orientation.w
+            );
+            reticle.setAttribute('visible', true);
+          }
+        } else {
+          reticle.setAttribute('visible', false);
         }
-      } else {
-        reticle.setAttribute('visible', false);
+      } catch (e) {
+        if (!this._loggedTickErr) {
+          this._loggedTickErr = true;   // nur einmal loggen, nicht pro Frame
+          (window.dbg || function () {})('❌ ar-hit-test.tick ERROR:', e && (e.name + ' ' + e.message));
+        }
       }
     },
   });
@@ -484,7 +494,21 @@
       <h1>Hambacher Schloss</h1>
       <small>Ausstellung 1 · Schau an die Wand</small>
     </div>
+    <button id="dbg-toggle" style="
+      margin-left:auto; pointer-events:auto;
+      background:rgba(0,200,255,0.1); border:1px solid rgba(0,200,255,0.3);
+      color:#7af; font-size:11px; border-radius:8px; padding:4px 9px; cursor:pointer;
+    ">🐞 Log</button>
   </div>
+
+  <!-- Debug-Log-Overlay (im AR via dom-overlay sichtbar) -->
+  <div id="dbg-log" style="
+    position:fixed; top:54px; left:6px; right:6px; z-index:400;
+    max-height:38vh; overflow-y:auto; pointer-events:auto;
+    background:rgba(0,0,0,0.82); color:#5f8; font:11px/1.45 monospace;
+    padding:8px 10px; border:1px solid rgba(0,255,150,0.25); border-radius:8px;
+    white-space:pre-wrap; word-break:break-word;
+  "></div>
 
   <div class="ar-stage">
     <div id="badge">Lade Handabdrücke…</div>
@@ -771,15 +795,58 @@ async function loadFootprints() {
   } catch (e) { console.warn('load error', e); }
 }
 
+/* ─── Debug-Logging (On-Screen + Server) ─── */
+function dbg(...args) {
+  const msg = args.map(a => {
+    try { return typeof a === 'object' ? JSON.stringify(a) : String(a); }
+    catch (_) { return String(a); }
+  }).join(' ');
+  const el = document.getElementById('dbg-log');
+  if (el) {
+    const line = document.createElement('div');
+    line.textContent = new Date().toLocaleTimeString() + '  ' + msg;
+    el.appendChild(line);
+    while (el.childNodes.length > 60) el.removeChild(el.firstChild);
+    el.scrollTop = el.scrollHeight;
+  }
+  // sendBeacon überlebt Page-Freeze/Unload besser als fetch
+  try { navigator.sendBeacon('/api/log', msg); } catch (_) {}
+}
+window.addEventListener('error', e =>
+  dbg('❌ JS ERROR:', e.message, '@', (e.filename || '') + ':' + (e.lineno || '')));
+window.addEventListener('unhandledrejection', e =>
+  dbg('❌ PROMISE REJECT:', (e.reason && (e.reason.message || e.reason)) || 'unknown'));
+dbg('--- page load --- UA:', navigator.userAgent);
+document.getElementById('dbg-toggle').onclick = () => {
+  const el = document.getElementById('dbg-log');
+  el.style.display = (el.style.display === 'none') ? 'block' : 'none';
+};
+
 /* ─── Kamera starten (Gyro-Fallback) ─── */
 function startFallbackCamera() {
+  dbg('startFallbackCamera()');
   navigator.mediaDevices.getUserMedia({
     video: { facingMode: 'environment', width: { ideal: 1280 } }, audio: false,
-  }).then(s => { document.getElementById('fallback-video').srcObject = s; }).catch(() => {});
+  }).then(s => {
+    document.getElementById('fallback-video').srcObject = s;
+    dbg('  ✓ getUserMedia ok, tracks=', s.getTracks().length);
+  }).catch(err => dbg('  ✗ getUserMedia FAIL:', err.name, err.message));
 
   function applyAlpha() { sceneEl.renderer.setClearColor(0x000000, 0); }
   if (sceneEl.renderer) applyAlpha();
   else sceneEl.addEventListener('renderstart', applyAlpha, { once: true });
+}
+
+/* ─── Fallback-Kamera stoppen (vor WebXR, sonst Kamera-Konflikt → Freeze) ─── */
+function stopFallbackCamera() {
+  const vid = document.getElementById('fallback-video');
+  if (vid && vid.srcObject) {
+    vid.srcObject.getTracks().forEach(t => { try { t.stop(); } catch (_) {} });
+    vid.srcObject = null;
+    dbg('stopFallbackCamera() → tracks gestoppt');
+  } else {
+    dbg('stopFallbackCamera() → kein aktiver Stream');
+  }
 }
 
 /* ─── Init ─── */
@@ -791,17 +858,31 @@ async function init() {
     navigator.xr &&
     await navigator.xr.isSessionSupported('immersive-ar').catch(() => false)
   );
+  dbg('init: hasWebXR=', hasWebXR, ' needsIOSPerm=', needsIOSPerm, ' navigator.xr=', !!navigator.xr);
 
   if (hasWebXR) {
     modeBadge.textContent = '📡 Tippe zum Starten';
     startFallbackCamera();
     // Browser erfordert User-Gesture für WebXR — erster Tap startet AR
+    let arStarted = false;
     const startAR = () => {
-      modeBadge.textContent = '📡 AR · Flächenerkennung';
-      sceneEl.enterAR().catch(() => {});
+      if (arStarted) return;          // click + touchend feuern beide → nur einmal
+      arStarted = true;
+      dbg('startAR: Tap erkannt → stoppe Kamera, dann enterAR()');
+      // WICHTIG: Fallback-Kamera freigeben, sonst hält sie die Kamera und
+      // WebXR friert ein (Kamera kann nicht doppelt belegt werden).
+      stopFallbackCamera();
+      modeBadge.textContent = '📡 AR startet…';
+      sceneEl.enterAR()
+        .then(() => dbg('  ✓ enterAR() promise resolved'))
+        .catch(err => {
+          dbg('  ✗ enterAR FAIL:', err && (err.name + ' ' + err.message));
+          arStarted = false;
+          startFallbackCamera();      // zurück in Vorschau
+        });
     };
-    document.querySelector('.ar-stage').addEventListener('click',    startAR, { once: true });
-    document.querySelector('.ar-stage').addEventListener('touchend', startAR, { once: true });
+    document.querySelector('.ar-stage').addEventListener('click',    startAR);
+    document.querySelector('.ar-stage').addEventListener('touchend', startAR);
 
   } else if (needsIOSPerm) {
     modeBadge.textContent = '📱 iOS · Tippe zum Starten';
@@ -818,12 +899,15 @@ async function init() {
 }
 
 sceneEl.addEventListener('enter-vr', () => {
+  dbg('▶ enter-vr (AR aktiv). is(ar-mode)=', sceneEl.is && sceneEl.is('ar-mode'));
   document.getElementById('fallback-video').style.display = 'none';
+  stopFallbackCamera();   // sicherheitshalber nochmal: kein doppelter Kamera-Zugriff
   document.getElementById('mode-badge').textContent = '📡 AR · Flächenerkennung';
   // In WebXR: Tap via XR-Select-Events, nicht via Maus-Koordinaten
   document.getElementById('cam3d').setAttribute('cursor', 'rayOrigin: xrselect; fuse: false');
 });
 sceneEl.addEventListener('exit-vr', () => {
+  dbg('◀ exit-vr (AR beendet)');
   document.getElementById('fallback-video').style.display = '';
   startFallbackCamera();
   document.getElementById('mode-badge').textContent = '📱 Gyro-Modus';
@@ -983,19 +1067,24 @@ async function confirmPlacement(x, y, z, qx, qy, qz, qw) {
   placeModeActive = false;
   document.getElementById('place-overlay').style.display = 'none';
   document.getElementById('reticle').setAttribute('visible', false);
+  dbg('confirmPlacement: POST', { x, y, z });
 
-  await fetch(`/api/footprints/${EXHIBITION_ID}`, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({
-      ...pendingFp,
-      x, y: y || 0, z,
-      quat_x: qx || 0, quat_y: qy || 0, quat_z: qz || 0,
-      quat_w: qw != null ? qw : 1,
-    }),
-  });
-
-  await loadFootprints();
+  try {
+    const res = await fetch(`/api/footprints/${EXHIBITION_ID}`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        ...pendingFp,
+        x, y: y || 0, z,
+        quat_x: qx || 0, quat_y: qy || 0, quat_z: qz || 0,
+        quat_w: qw != null ? qw : 1,
+      }),
+    });
+    dbg('  POST status=', res.status);
+    await loadFootprints();
+  } catch (e) {
+    dbg('  ❌ POST FAIL:', e && e.message);
+  }
   pendingFp = null;
 
   const t = document.getElementById('toast');
@@ -1006,12 +1095,13 @@ async function confirmPlacement(x, y, z, qx, qy, qz, qw) {
 // XR-Select-Event (WebXR Tap) → Handabdruck platzieren
 sceneEl.addEventListener('enter-vr', () => {
   const session = sceneEl.renderer.xr?.getSession?.();
-  if (!session) return;
+  if (!session) { dbg('select-setup: keine XR-Session'); return; }
   session.addEventListener('select', () => {
-    if (!placeModeActive) return;
     const hitTest = sceneEl.components['ar-hit-test'];
     const pose    = hitTest?.lastPose;
-    if (!pose) return;
+    dbg('XR select: placeMode=', placeModeActive, ' hatPose=', !!pose);
+    if (!placeModeActive) return;
+    if (!pose) { dbg('  → keine Fläche erkannt, ignoriere'); return; }
     const p = pose.transform.position;
     const o = pose.transform.orientation;
     confirmPlacement(p.x, p.y, p.z, o.x, o.y, o.z, o.w);
@@ -1051,7 +1141,9 @@ document.getElementById('add-btn').onclick = () => {
   document.getElementById('inp-msg').value = '';
   document.getElementById('sheet').classList.add('collapsed');
 
-  if (sceneEl.is && sceneEl.is('vr-mode')) {
+  const inVR = !!(sceneEl.is && sceneEl.is('vr-mode'));
+  dbg('add-btn: pendingFp gesetzt, inVR=', inVR);
+  if (inVR) {
     // WebXR aktiv: warte auf Tap auf erkannte Fläche
     placeModeActive = true;
     document.getElementById('place-overlay').style.display = 'flex';
