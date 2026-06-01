@@ -196,7 +196,9 @@
      erkannte Flächen (Boden, Wände, Objekte).
      Speichert lastPose für tap-to-place.
   ════════════════════════════════════════════════ */
-  AFRAME.registerComponent('ar-hit-test', {
+  // NICHT 'ar-hit-test' nennen — das ist eine eingebaute A-Frame-Komponente.
+  // Kollision warf bei Registrierung → A-Frames Version lief und crashte ('reading xr').
+  AFRAME.registerComponent('fp-hit-test', {
     init: function () {
       this.hitTestSource = null;
       this.lastPose      = null;
@@ -468,7 +470,7 @@
   loading-screen="enabled: false"
   device-orientation-permission-ui="enabled: false"
   webxr="requiredFeatures: local; optionalFeatures: local-floor,dom-overlay,hit-test; overlayElement: #ui;"
-  ar-hit-test
+  fp-hit-test
 >
   <a-camera
     id="cam3d"
@@ -500,8 +502,12 @@
       <h1>Hambacher Schloss</h1>
       <small>Ausstellung 1 · Schau an die Wand</small>
     </div>
+    <span id="version-badge" style="
+      margin-left:auto; align-self:center;
+      font:11px/1 monospace; color:#3a6; letter-spacing:.5px;
+    ">–</span>
     <button id="dbg-toggle" style="
-      margin-left:auto; pointer-events:auto;
+      pointer-events:auto;
       background:rgba(0,200,255,0.1); border:1px solid rgba(0,200,255,0.3);
       color:#7af; font-size:11px; border-radius:8px; padding:4px 9px; cursor:pointer;
     ">🐞 Log</button>
@@ -594,6 +600,7 @@
 
 <script>
 /* ─── Konfiguration ─── */
+const APP_VERSION   = 'p6 · fp-hit-test';   // bei jedem Patch hochzählen
 const EXHIBITION_ID = '1';
 const COLORS = [
   '#00cfff','#ff3dac','#39ff14','#ff6b00',
@@ -822,7 +829,8 @@ window.addEventListener('error', e =>
   dbg('❌ JS ERROR:', e.message, '@', (e.filename || '') + ':' + (e.lineno || '')));
 window.addEventListener('unhandledrejection', e =>
   dbg('❌ PROMISE REJECT:', (e.reason && (e.reason.message || e.reason)) || 'unknown'));
-dbg('--- page load --- UA:', navigator.userAgent);
+document.getElementById('version-badge').textContent = APP_VERSION;
+dbg('=== VERSION', APP_VERSION, '=== UA:', navigator.userAgent);
 document.getElementById('dbg-toggle').onclick = () => {
   const el = document.getElementById('dbg-log');
   el.style.display = (el.style.display === 'none') ? 'block' : 'none';
@@ -1107,7 +1115,7 @@ sceneEl.addEventListener('enter-vr', () => {
   const session = sceneEl.renderer.xr?.getSession?.();
   if (!session) { dbg('select-setup: keine XR-Session'); return; }
   session.addEventListener('select', () => {
-    const hitTest = sceneEl.components['ar-hit-test'];
+    const hitTest = sceneEl.components['fp-hit-test'];
     const pose    = hitTest?.lastPose;
     dbg('XR select: placeMode=', placeModeActive, ' hatPose=', !!pose);
     if (!placeModeActive) return;
