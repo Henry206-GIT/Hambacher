@@ -4,7 +4,7 @@ const cors = require('cors');
 const path = require('path');
 
 const app = express();
-const db = new Database('footprints.db');
+const db = new Database(process.env.DB_PATH || 'footprints.db');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS footprints (
@@ -31,9 +31,6 @@ db.exec(`
   try { db.exec(`ALTER TABLE footprints ADD COLUMN ${col}`); } catch (_) {}
 });
 
-// Alle alten Abdrücke löschen (kein Orientierungsdatum)
-db.exec(`DELETE FROM footprints`);
-
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -51,10 +48,21 @@ app.get('/api/footprints/:exhibitionId', (req, res) => {
   res.json(rows);
 });
 
+const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+const num = (v, def) => (typeof v === 'number' && isFinite(v) ? v : def);
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
 app.post('/api/footprints/:exhibitionId', (req, res) => {
   const { name, message, color, size, x, y, z, quat_x, quat_y, quat_z, quat_w } = req.body;
-  if (!name)                       return res.status(400).json({ error: 'Name required' });
-  if (x == null || z == null)      return res.status(400).json({ error: 'Position required' });
+  if (!name || typeof name !== 'string') return res.status(400).json({ error: 'Name required' });
+  if (typeof x !== 'number' || typeof z !== 'number' || !isFinite(x) || !isFinite(z)) {
+    return res.status(400).json({ error: 'Position required' });
+  }
+
+  const safeName  = name.trim().slice(0, 20);
+  const safeMsg   = (typeof message === 'string' ? message : '').slice(0, 36);
+  const safeColor = HEX_RE.test(color) ? color : '#00cfff';
+  const safeSize  = clamp(num(size, 1.0), 0.6, 1.5);
 
   const result = db.prepare(`
     INSERT INTO footprints
@@ -62,16 +70,20 @@ app.post('/api/footprints/:exhibitionId', (req, res) => {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     req.params.exhibitionId,
-    name, message || '', color || '#00cfff', size || 1.0,
-    x, y || 0, z,
-    quat_x || 0, quat_y || 0, quat_z || 0, quat_w != null ? quat_w : 1
+    safeName, safeMsg, safeColor, safeSize,
+    x, num(y, 0), z,
+    num(quat_x, 0), num(quat_y, 0), num(quat_z, 0), num(quat_w, 1)
   );
 
-  res.json({ id: result.lastInsertRowid, x, y: y || 0, z, quat_x, quat_y, quat_z, quat_w });
+  res.json({ id: result.lastInsertRowid, x, y: num(y, 0), z, quat_x, quat_y, quat_z, quat_w });
 });
 
-// Admin: alle Abdrücke einer Ausstellung löschen
+// Admin: alle Abdrücke einer Ausstellung löschen (Token erforderlich, falls gesetzt)
 app.delete('/api/footprints/:exhibitionId', (req, res) => {
+  const token = process.env.ADMIN_TOKEN;
+  if (token && req.get('x-admin-token') !== token) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   db.prepare('DELETE FROM footprints WHERE exhibition_id = ?').run(req.params.exhibitionId);
   res.json({ ok: true });
 });

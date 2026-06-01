@@ -974,8 +974,9 @@ COLORS.forEach(c => {
 });
 
 /* ─── Tap-to-Place ─── */
-let pendingFp       = null;
-let placeModeActive = false;
+let pendingFp        = null;
+let placeModeActive  = false;
+let gyroPlaceHandler = null;
 
 async function confirmPlacement(x, y, z, qx, qy, qz, qw) {
   if (!placeModeActive || !pendingFp) return;
@@ -1022,6 +1023,10 @@ document.getElementById('place-cancel').onclick = () => {
   placeModeActive = false;
   pendingFp = null;
   document.getElementById('place-overlay').style.display = 'none';
+  if (gyroPlaceHandler) {
+    document.getElementById('place-overlay').removeEventListener('click', gyroPlaceHandler);
+    gyroPlaceHandler = null;
+  }
 };
 
 /* ─── Handabdruck hinzufügen ─── */
@@ -1053,11 +1058,17 @@ document.getElementById('add-btn').onclick = () => {
   } else {
     // Gyro-Modus: Platzierung auf Boden direkt per Touch
     placeModeActive = true;
-    document.getElementById('place-overlay').style.display = 'flex';
-    // Tap auf AR-Bühne → Boden-Platzierung (y=0, Quaternion identity = flach)
+    const overlay = document.getElementById('place-overlay');
+    overlay.style.display = 'flex';
+    // Tap auf Overlay → Boden-Platzierung (y=0, Quaternion identity = flach).
+    // Das Overlay liegt über der AR-Bühne, daher Listener hier statt auf .ar-stage.
     const placeOnFloor = (e) => {
+      // Abbrechen-Button nicht als Platzierung werten
+      if (e.target.closest('#place-cancel')) return;
       if (!placeModeActive) return;
       e.stopPropagation();
+      overlay.removeEventListener('click', placeOnFloor);
+      gyroPlaceHandler = null;
       // Kameraposition als Basis, 2m vor der Kamera auf Bodenhöhe
       const cam = document.getElementById('cam3d');
       if (!cam) return;
@@ -1069,8 +1080,8 @@ document.getElementById('add-btn').onclick = () => {
         0, 0, 0, 1  // identity quaternion = flach auf Boden
       );
     };
-    document.querySelector('.ar-stage').addEventListener('click',    placeOnFloor, { once: true });
-    document.querySelector('.ar-stage').addEventListener('touchend', placeOnFloor, { once: true });
+    gyroPlaceHandler = placeOnFloor;
+    overlay.addEventListener('click', placeOnFloor);
   }
 };
 </script>
