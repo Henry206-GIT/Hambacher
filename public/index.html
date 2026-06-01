@@ -471,15 +471,18 @@
   device-orientation-permission-ui="enabled: false"
   webxr="requiredFeatures: local; optionalFeatures: local-floor,dom-overlay,hit-test; overlayElement: #ui;"
   fp-hit-test
+  cursor__mouse="rayOrigin: mouse; fuse: false"
+  cursor__xrselect="rayOrigin: xrselect; fuse: false"
+  raycaster="objects: .fp-plane; far: 20"
 >
+  <!-- Cursor/Raycaster MÜSSEN auf der Scene liegen, nicht auf der Kamera:
+       A-Frames xrselect-Cursor liest this.el.renderer.xr — nur die Scene
+       hat .renderer, die Kamera nicht (sonst Crash 'reading xr' beim Tap). -->
   <a-camera
     id="cam3d"
     position="0 1.5 0"
     look-controls="pointerLockEnabled: false; magicWindowTrackingEnabled: true; touchEnabled: false"
     wasd-controls="enabled: false"
-    cursor__mouse="rayOrigin: mouse; fuse: false"
-    cursor__xrselect="rayOrigin: xrselect; fuse: false"
-    raycaster="objects: .fp-plane; far: 20"
   ></a-camera>
 
   <!-- Flächenerkennungs-Ring (WebXR hit-test) -->
@@ -600,7 +603,7 @@
 
 <script>
 /* ─── Konfiguration ─── */
-const APP_VERSION   = 'p6 · fp-hit-test';   // bei jedem Patch hochzählen
+const APP_VERSION   = 'p7 · cursor→scene';   // bei jedem Patch hochzählen
 const EXHIBITION_ID = '1';
 const COLORS = [
   '#00cfff','#ff3dac','#39ff14','#ff6b00',
