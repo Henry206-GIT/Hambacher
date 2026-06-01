@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Hambacher Schloss – Digitale Handabdrücke</title>
-  <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+  <script src="https://aframe.io/releases/1.4.0/aframe.min.js" crossorigin="anonymous"></script>
 
   <script>
   /* ════════════════════════════════════════════════
@@ -134,10 +134,15 @@
   AFRAME.registerComponent('billboard', {
     init: function () { this._v = new THREE.Vector3(); },
     tick: function () {
-      const cam = document.getElementById('cam3d');
-      if (!cam) return;
-      cam.object3D.getWorldPosition(this._v);
-      this.el.object3D.lookAt(this._v);
+      try {
+        const cam = document.getElementById('cam3d');
+        if (!cam) return;
+        cam.object3D.getWorldPosition(this._v);
+        this.el.object3D.lookAt(this._v);
+      } catch (e) {
+        if (!this._err) { this._err = true;
+          (window.dbg || function(){})('❌ billboard.tick:', e && (e.name + ' ' + e.message)); }
+      }
     },
   });
 
@@ -821,6 +826,12 @@ document.getElementById('dbg-toggle').onclick = () => {
   const el = document.getElementById('dbg-log');
   el.style.display = (el.style.display === 'none') ? 'block' : 'none';
 };
+// Jeden Tap mitschreiben → Korrelation mit Fehlern/Freeze
+document.addEventListener('pointerdown', e => {
+  const t = e.target;
+  dbg('👆 tap @', Math.round(e.clientX) + ',' + Math.round(e.clientY),
+      'auf', t.id || t.className || t.tagName);
+}, { capture: true });
 
 /* ─── Kamera starten (Gyro-Fallback) ─── */
 function startFallbackCamera() {
