@@ -665,6 +665,13 @@
     </div>
   </div>
 
+  <!-- Backdrop fängt Taps ab, solange das Popup offen ist (sonst trifft man
+       die Abdrücke dahinter). Liegt unter dem Popup. -->
+  <div id="popup-backdrop" style="
+    display:none; position:fixed; inset:0; z-index:290;
+    pointer-events:auto; background:transparent;
+  "></div>
+
   <!-- Tap-to-reveal Popup: direkt in #ui, vertikal zentriert -->
   <div id="msg-popup" style="
     display:none; position:fixed; z-index:300;
@@ -689,7 +696,7 @@
 
 <script>
 /* ─── Konfiguration ─── */
-const APP_VERSION   = 'p15 · xr-anchor';   // bei jedem Patch hochzählen
+const APP_VERSION   = 'p16 · popup-modal';   // bei jedem Patch hochzählen
 const EXHIBITION_ID = '1';
 const COLORS = [
   '#00cfff','#ff3dac','#39ff14','#ff6b00',
@@ -822,7 +829,10 @@ function spawnHandprint(fp) {
     const comp = plane.components['holo-mat'];
     if (comp) comp.setTexture(makeHandCanvas(col));
   });
-  plane.addEventListener('click', () => { if (!placeModeActive) showPopup(fp); });
+  plane.addEventListener('click', () => {
+    // nicht während Platzieren/Kalibrieren und nicht wenn schon ein Popup offen ist
+    if (!placeModeActive && !calibMode && !popupOpen) showPopup(fp);
+  });
   wrap.appendChild(plane);
 
   /* -- Pulsierender Glow-Ring -- */
@@ -1073,21 +1083,32 @@ sceneEl.addEventListener('exit-vr', () => {
 
 /* ─── Popup: Nachricht anzeigen ─── */
 let popupTimer = null;
+let popupOpen  = false;
 
 function showPopup(fp) {
   const popup = document.getElementById('msg-popup');
   document.getElementById('popup-name').textContent = fp.name;
   document.getElementById('popup-msg').textContent  =
     fp.message || '(Keine Nachricht hinterlassen)';
+  document.getElementById('popup-backdrop').style.display = 'block';
   popup.style.display = 'block';
+  popupOpen = true;
   clearTimeout(popupTimer);
-  popupTimer = setTimeout(() => { popup.style.display = 'none'; }, 5000);
+  popupTimer = setTimeout(hidePopup, 5000);
 }
 
-document.getElementById('popup-close').onclick = () => {
+function hidePopup() {
   document.getElementById('msg-popup').style.display = 'none';
+  document.getElementById('popup-backdrop').style.display = 'none';
+  popupOpen = false;
   clearTimeout(popupTimer);
-};
+}
+
+document.getElementById('popup-close').onclick = hidePopup;
+// Backdrop fängt Taps ab → schließt Popup, Abdrücke dahinter bleiben unberührt
+document.getElementById('popup-backdrop').onclick = hidePopup;
+// im WebXR-dom-overlay den XR-Select unterdrücken, solange Popup offen ist
+document.getElementById('popup-backdrop').addEventListener('beforexrselect', e => e.preventDefault());
 
 /* ─── Reset-Tracking-Button ─── */
 let resetBusy = false;
