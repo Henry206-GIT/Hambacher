@@ -475,7 +475,8 @@
     position="0 1.5 0"
     look-controls="pointerLockEnabled: false; magicWindowTrackingEnabled: true; touchEnabled: false"
     wasd-controls="enabled: false"
-    cursor="rayOrigin: mouse; fuse: false"
+    cursor__mouse="rayOrigin: mouse; fuse: false"
+    cursor__xrselect="rayOrigin: xrselect; fuse: false"
     raycaster="objects: .fp-plane; far: 20"
   ></a-camera>
 
@@ -914,16 +915,14 @@ sceneEl.addEventListener('enter-vr', () => {
   document.getElementById('fallback-video').style.display = 'none';
   stopFallbackCamera();   // sicherheitshalber nochmal: kein doppelter Kamera-Zugriff
   document.getElementById('mode-badge').textContent = '📡 AR · Flächenerkennung';
-  // In WebXR: Tap via XR-Select-Events, nicht via Maus-Koordinaten
-  document.getElementById('cam3d').setAttribute('cursor', 'rayOrigin: xrselect; fuse: false');
+  // Cursor mouse+xrselect sind deklarativ gesetzt (kein Laufzeit-Umschalten,
+  // das verursachte den 'reading xr'-Crash).
 });
 sceneEl.addEventListener('exit-vr', () => {
   dbg('◀ exit-vr (AR beendet)');
   document.getElementById('fallback-video').style.display = '';
   startFallbackCamera();
   document.getElementById('mode-badge').textContent = '📱 Gyro-Modus';
-  // Zurück zu Maus/Touch-Koordinaten
-  document.getElementById('cam3d').setAttribute('cursor', 'rayOrigin: mouse; fuse: false');
 });
 
 /* ─── Popup: Nachricht anzeigen ─── */
