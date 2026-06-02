@@ -32,3 +32,4 @@ else
   echo "Fehler beim Zurücksetzen: $RESP"
   exit 1
 fi
+
