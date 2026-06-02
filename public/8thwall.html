@@ -14,9 +14,9 @@
 
   <script>
   /* ════════ Konfiguration ════════ */
-  const APP_VERSION   = 'w2 · 8thwall-full';
+  const APP_VERSION   = 'w3 · holo-style';
   const EXHIBITION_ID = '1';
-  const HAND_W        = 1.2;                 // Abdruck-Breite in 8th-Wall-Einheiten (~0,2 m/Einheit)
+  const HAND_W        = 3.5;                 // Abdruck-Breite in 8th-Wall-Einheiten (~0,2 m/Einheit)
   const PLACE_MIN = 3, PLACE_MAX = 14;       // Reticle-Distanz klemmen (nicht zu weit/nah)
   const COLORS = ['#00cfff','#ff3dac','#39ff14','#ff6b00','#bf00ff','#ffec00','#ff2244','#00ffcc','#ff9500','#ffffff'];
   let   selectedColor = COLORS[0];
@@ -57,20 +57,47 @@
     ctx.fillStyle=grd;ctx.fillRect(0,0,W,H);drawOneHand(ctx,W/2,H*0.58,95,baseColor);return cv;
   }
 
-  /* ════════ Component: footprint (Glow-Textur) ════════ */
-  AFRAME.registerComponent('footprint', {
-    schema: { color:{default:'#00cfff'}, preview:{default:false} },
-    init(){ this._apply(); this.el.addEventListener('object3dset', () => this._apply()); },
-    update(){ if(this._mat) this._setTex(this.data.color); },
-    _apply(){
-      const tex = new THREE.CanvasTexture(makeHandCanvas(this.data.color)); tex.needsUpdate=true;
-      this._mat = new THREE.MeshBasicMaterial({ map:tex, transparent:true,
-        opacity:this.data.preview?0.6:0.97, blending:THREE.AdditiveBlending,
-        depthWrite:false, side:THREE.DoubleSide });
-      const m=this.el.getObject3D('mesh'); if(m) m.material=this._mat;
+  /* ════════ Hologramm-Shader + Komponenten (Stil wie Android) ════════ */
+  const HOLO_VERT = `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`;
+  const HOLO_FRAG = `precision highp float; uniform float time; uniform vec3 glowColor; uniform sampler2D footTex; varying vec2 vUv;
+    void main(){
+      vec4 tex=texture2D(footTex,vUv); if(tex.a<0.04) discard;
+      float scan=sin(vUv.y*90.0-time*5.5)*0.5+0.5; scan=0.55+pow(scan,2.5)*0.45;
+      float sp=fract(time*0.28); float sw=smoothstep(0.0,0.06,fract(vUv.y-sp))*smoothstep(0.16,0.06,fract(vUv.y-sp));
+      float pulse=sin(time*2.1)*0.08+0.92; float flicker=sin(time*61.3)*sin(time*19.7)*0.04+0.96;
+      float ex=1.0-abs(vUv.x-0.5)*2.0; float ey=1.0-abs(vUv.y-0.5)*2.0; float rim=pow(1.0-min(ex,ey),3.5)*0.6;
+      vec3 col=glowColor*(scan+rim)+vec3(sw*0.55); float alpha=tex.a*scan*pulse*flicker;
+      gl_FragColor=vec4(col,alpha);
+    }`;
+  AFRAME.registerComponent('holo-mat', {
+    schema: { color:{default:'#00bfff'} },
+    init(){
+      this.uniforms={ time:{value:0}, glowColor:{value:new THREE.Color(this.data.color)}, footTex:{value:new THREE.Texture()} };
+      this.mat=new THREE.ShaderMaterial({ uniforms:this.uniforms, vertexShader:HOLO_VERT, fragmentShader:HOLO_FRAG,
+        transparent:true, blending:THREE.AdditiveBlending, side:THREE.DoubleSide, depthWrite:false });
+      this._apply(); this.el.addEventListener('object3dset', () => this._apply());
     },
-    _setTex(col){ const t=new THREE.CanvasTexture(makeHandCanvas(col)); t.needsUpdate=true;
-      this._mat.map=t; this._mat.needsUpdate=true; },
+    _apply(){ const m=this.el.getObject3D('mesh'); if(m) m.traverse(c=>{ if(c.isMesh) c.material=this.mat; }); },
+    setTexture(canvas){ const t=new THREE.CanvasTexture(canvas); t.needsUpdate=true; this.uniforms.footTex.value=t; },
+    update(){ this.uniforms.glowColor.value.set(this.data.color); },
+    tick(t){ this.uniforms.time.value=t/1000; },
+  });
+  AFRAME.registerComponent('pulse-ring', {
+    schema: { color:{default:'#00bfff'}, r:{default:0.3} },
+    init(){
+      this.mat=new THREE.MeshBasicMaterial({ color:new THREE.Color(this.data.color), transparent:true,
+        opacity:0.8, blending:THREE.AdditiveBlending, depthWrite:false });
+      const ring=new THREE.Mesh(new THREE.TorusGeometry(this.data.r, this.data.r*0.04, 8, 80), this.mat);
+      ring.rotation.x=-Math.PI/2; ring.position.y=0.01; this.el.object3D.add(ring); this._ring=ring;
+    },
+    tick(t){ const f=t/1000; const s=1.0+Math.sin(f*2.6)*0.07; this._ring.scale.set(s,s,s);
+      this.mat.opacity=0.35+Math.sin(f*2.6+1.0)*0.35; },
+  });
+  AFRAME.registerComponent('billboard', {
+    init(){ this._v=new THREE.Vector3(); },
+    tick(){ try{ const cam=document.getElementById('camera'); if(!cam) return;
+      cam.object3D.getWorldPosition(this._v); this.el.object3D.lookAt(this._v); }
+      catch(e){ if(!this._err){ this._err=true; dbg('billboard:', e&&e.message); } } },
   });
 
   /* ════════ Component: reticle-follow ════════
@@ -110,27 +137,48 @@
     },
   });
 
-  /* ════════ Abdruck einsetzen ════════ */
+  /* ════════ Abdruck einsetzen (Holo-Stil wie Android) ════════ */
   function spawnFootprint(fp){
     if (rendered.has(fp.id)) return;
     rendered.add(fp.id);
-    const W = HAND_W, H = W*(380/300);
+    const W = HAND_W, H = W*(380/300), col = fp.color || '#00cfff';
     const wrap = document.createElement('a-entity');
-    wrap.setAttribute('position', `${fp.x} 0.02 ${fp.z}`);
+    wrap.setAttribute('position', `${fp.x} 0.03 ${fp.z}`);
     wrap.setAttribute('animation__spawn','property: scale; from: 0 0 0; to: 1 1 1; dur: 600; easing: easeOutElastic');
+
+    // Holo-Hand flach auf Boden
     const plane = document.createElement('a-plane');
     plane.setAttribute('width', W); plane.setAttribute('height', H);
-    plane.setAttribute('rotation', '-90 0 0');
+    plane.setAttribute('rotation', '-90 0 0'); plane.setAttribute('position', '0 0.01 0');
     plane.setAttribute('class', 'fp-plane');
-    plane.setAttribute('footprint', `color: ${fp.color || '#00cfff'}`);
+    plane.setAttribute('holo-mat', `color: ${col}`);
+    plane.addEventListener('loaded', () => { const c=plane.components['holo-mat']; if(c) c.setTexture(makeHandCanvas(col)); });
     plane.addEventListener('click', () => { if(!placeModeActive && !calibMode && !popupOpen) showPopup(fp); });
     wrap.appendChild(plane);
-    const txt = document.createElement('a-text');
-    txt.setAttribute('value', fp.name || '');
-    txt.setAttribute('align', 'center'); txt.setAttribute('color', fp.color || '#00cfff');
-    txt.setAttribute('position', `0 0.05 ${-H*0.62}`); txt.setAttribute('rotation', '-90 0 0');
-    txt.setAttribute('width', 8); txt.setAttribute('wrap-count', 18);
-    wrap.appendChild(txt);
+
+    // Pulsierender Glow-Ring
+    const ring = document.createElement('a-entity');
+    ring.setAttribute('pulse-ring', `color: ${col}; r: ${0.64*W}`);
+    wrap.appendChild(ring);
+
+    // Äußerer statischer Ring
+    const outer = document.createElement('a-torus');
+    outer.setAttribute('radius', 0.78*W); outer.setAttribute('radius-tubular', 0.05*W*0.6);
+    outer.setAttribute('rotation','-90 0 0'); outer.setAttribute('position','0 0.008 0');
+    outer.setAttribute('material', `color: ${col}; transparent: true; opacity: 0.25; emissive: ${col}; emissiveIntensity: 0.8; blending: additive; depthWrite: false`);
+    wrap.appendChild(outer);
+
+    // Name-Label (Billboard, schwebt über dem Abdruck)
+    const label = document.createElement('a-entity');
+    label.setAttribute('position', `0 ${0.95*W} 0`);
+    label.setAttribute('billboard', '');
+    const lblName = document.createElement('a-text');
+    lblName.setAttribute('value', fp.name || ''); lblName.setAttribute('align', 'center');
+    lblName.setAttribute('color', col); lblName.setAttribute('width', Math.max(8, (fp.name||'').length*0.9));
+    lblName.setAttribute('wrap-count', 18);
+    label.appendChild(lblName);
+    wrap.appendChild(label);
+
     document.getElementById('fp-root').appendChild(wrap);
   }
   </script>
@@ -219,10 +267,10 @@
 
   <a-entity id="fp-root"></a-entity>
 
-  <!-- Vorschau-Hand -->
+  <!-- Vorschau-Hand (Holo-Stil) -->
   <a-entity id="reticle" visible="false">
-    <a-plane id="reticle-hand" width="1.2" height="1.52" rotation="-90 0 0"
-             footprint="color: #00ffcc; preview: true"></a-plane>
+    <a-plane id="reticle-hand" width="3.5" height="4.43" rotation="-90 0 0"
+             position="0 0.02 0" holo-mat="color: #00ffcc"></a-plane>
   </a-entity>
 
   <!-- unsichtbarer Boden (nur falls gebraucht) -->
@@ -339,9 +387,17 @@ async function confirmPlacement(){
   pendingFp=null; toast('Abdruck platziert');
 }
 
+/* Vorschau-Hand (Reticle) auf Farbe setzen */
+function setReticleHand(col){
+  const p=document.getElementById('reticle-hand');
+  p.setAttribute('holo-mat', `color: ${col}`);
+  const c=p.components && p.components['holo-mat'];
+  if (c) c.setTexture(makeHandCanvas(col));
+}
+
 /* ── Kalibrierung ── */
 function startCalibration(){ calibMode=true; placeModeActive=false;
-  document.getElementById('reticle-hand').setAttribute('footprint','color: #00ffcc; preview: true');
+  setReticleHand('#00ffcc');
   document.getElementById('place-overlay').style.display='none';
   document.getElementById('calib-overlay').style.display='flex'; dbg('calib gestartet'); }
 function endCalibration(){ calibMode=false; document.getElementById('calib-overlay').style.display='none'; }
@@ -358,7 +414,7 @@ document.getElementById('add-btn').onclick = () => {
   const nameEl=document.getElementById('inp-name'); const name=(nameEl.value||'').trim();
   if(!name){ nameEl.classList.add('error'); nameEl.focus(); setTimeout(()=>nameEl.classList.remove('error'),900); return; }
   pendingFp={ name, message:(document.getElementById('inp-msg').value||'').trim(), color:selectedColor };
-  document.getElementById('reticle-hand').setAttribute('footprint', `color: ${selectedColor}; preview: true`);
+  setReticleHand(selectedColor);
   nameEl.value=''; document.getElementById('inp-msg').value='';
   document.getElementById('sheet').classList.add('collapsed');
   endCalibration();
