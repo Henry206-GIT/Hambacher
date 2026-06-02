@@ -3,18 +3,13 @@
 <head>
   <meta charset="UTF-8">
 
-  <!-- Apple-Geräte (kein WebXR) sofort auf die 8th-Wall-Version umleiten.
-       Android bleibt auf dieser Seite (natives WebXR/ARCore).
-       ?noredirect umgeht die Weiterleitung (Debug). MUSS als Erstes laufen. -->
+  <!-- ALLE Geräte (iOS + Android) auf die 8th-Wall-Version umleiten — eine
+       einheitliche AR-App. ?noredirect öffnet die alte WebXR-Version (Debug).
+       MUSS als Erstes laufen. -->
   <script>
-    (function () {
-      var iOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
-        || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-        || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
-      if (iOS && !/noredirect/.test(location.search)) {
-        location.replace('8thwall.html' + location.search);
-      }
-    })();
+    if (!/noredirect/.test(location.search)) {
+      location.replace('8thwall.html' + location.search);
+    }
   </script>
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
@@ -783,7 +778,7 @@
 
 <script>
 /* ─── Konfiguration ─── */
-const APP_VERSION   = 'p29 · ios-redirect-8thwall';   // bei jedem Patch hochzählen
+const APP_VERSION   = 'p30 · all-redirect-8thwall';   // bei jedem Patch hochzählen
 const EXHIBITION_ID = '1';
 const COLORS = [
   '#00cfff','#ff3dac','#39ff14','#ff6b00',
