@@ -35,7 +35,7 @@ db.exec(`
 app.use(cors());
 app.use(express.json());
 
-// Debug-Log vom Client (sendBeacon → text/plain). Schreibt nach debug.log.
+// Debug-Log vom Client (sendBeacon text/plain). Schreibt nach debug.log.
 app.post('/api/log', express.text({ type: '*/*', limit: '16kb' }), (req, res) => {
   const line = `${new Date().toISOString()}  ${(req.body || '').toString().slice(0, 2000)}\n`;
   fs.appendFile(path.join(__dirname, 'debug.log'), line, () => {});

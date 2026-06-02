@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 URL=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' /tmp/cf.log | head -1)
 
 if [ -z "$URL" ]; then
-  echo "❌ Kein Tunnel aktiv. Starte erst start.sh"
+  echo "Kein Tunnel aktiv. Starte erst start.sh"
   exit 1
 fi
 
@@ -28,6 +28,6 @@ git commit -m "update live url: $URL"
 git push origin main
 
 echo ""
-echo "✓ Fertig! Kurze URL:"
+echo "Fertig! Kurze URL:"
 echo "  https://henry206-git.github.io/Hambacher"
 echo ""

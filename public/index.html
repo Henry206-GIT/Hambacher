@@ -10,7 +10,7 @@
   /* ════════════════════════════════════════════════
      GLSL – Hologramm-Shader
      Additive Blending: die Farbe wird zum Hintergrund
-     addiert → echter Glow-Effekt auf dunklem Boden
+     addiert echter Glow-Effekt auf dunklem Boden
   ════════════════════════════════════════════════ */
   const HOLO_VERT = /* glsl */`
     varying vec2 vUv;
@@ -141,7 +141,7 @@
         this.el.object3D.lookAt(this._v);
       } catch (e) {
         if (!this._err) { this._err = true;
-          (window.dbg || function(){})('❌ billboard.tick:', e && (e.name + ' ' + e.message)); }
+          (window.dbg || function(){})('billboard.tick:', e && (e.name + ' ' + e.message)); }
       }
     },
   });
@@ -197,7 +197,7 @@
      Speichert lastPose für tap-to-place.
   ════════════════════════════════════════════════ */
   // NICHT 'ar-hit-test' nennen — das ist eine eingebaute A-Frame-Komponente.
-  // Kollision warf bei Registrierung → A-Frames Version lief und crashte ('reading xr').
+  // Kollision warf bei Registrierung A-Frames Version lief und crashte ('reading xr').
   AFRAME.registerComponent('fp-hit-test', {
     init: function () {
       this.hitTestSource = null;
@@ -221,7 +221,7 @@
     },
     tick: function () {
       if (!this.hitTestSource) return;
-      // try/catch: ein throw im tick würde sonst den ganzen Render-Loop killen → Freeze
+      // try/catch: ein throw im tick würde sonst den ganzen Render-Loop killen Freeze
       try {
         const xr     = this.el.sceneEl.renderer.xr;
         const frame  = xr.getFrame?.();
@@ -259,7 +259,7 @@
             }
           }
         } else if (placing) {
-          // Kein Plane-Hit → Depth-Sensing nutzen (echte Distanz zur Wand,
+          // Kein Plane-Hit Depth-Sensing nutzen (echte Distanz zur Wand,
           // auch untexturiert). Fällt auf festen Abstand zurück, wenn keine
           // Tiefe verfügbar. Orientierung aus Blickrichtung geschätzt.
           const camO = document.getElementById('cam3d').object3D;
@@ -310,15 +310,15 @@
               this._lastHas = has;
               ds.style.display = 'block';
               if (has) {
-                ds.textContent = '✓ Fläche erkannt – jetzt verankern/platzieren';
+                ds.textContent = 'Fläche erkannt – jetzt verankern/platzieren';
                 ds.style.background = 'rgba(0,170,90,0.92)';
               } else {
-                // Fallback aktiv → Platzieren trotzdem möglich (Schätzposition)
+                // Fallback aktiv Platzieren trotzdem möglich (Schätzposition)
                 const tips = [
-                  '⚠ Keine echte Fläche – Schätzposition (Platzieren geht trotzdem)',
-                  '→ für echte Wand: auf Struktur zielen (Kante, Poster, Muster)',
-                  '→ Handy langsam hin- und herschwenken',
-                  '→ Abstand 0,5–2 m halten · mehr Licht',
+                  'Keine echte Fläche – Schätzposition (Platzieren geht trotzdem)',
+                  'für echte Wand: auf Struktur zielen (Kante, Poster, Muster)',
+                  'Handy langsam hin- und herschwenken',
+                  'Abstand 0,5–2 m halten · mehr Licht',
                 ];
                 ds.textContent = tips[Math.floor(this._vf / 40) % tips.length];
                 ds.style.background = 'rgba(210,120,40,0.92)';
@@ -332,7 +332,7 @@
       } catch (e) {
         if (!this._loggedTickErr) {
           this._loggedTickErr = true;   // nur einmal loggen, nicht pro Frame
-          (window.dbg || function () {})('❌ ar-hit-test.tick ERROR:', e && (e.name + ' ' + e.message));
+          (window.dbg || function () {})('ar-hit-test.tick ERROR:', e && (e.name + ' ' + e.message));
         }
       }
     },
@@ -585,7 +585,7 @@
 <!-- UI Overlay -->
 <div id="ui">
   <div id="header">
-    <div style="font-size:22px">🏰</div>
+    <div style="font-size:22px"></div>
     <div>
       <h1>Hambacher Schloss</h1>
       <small>Ausstellung 1 · Schau an die Wand</small>
@@ -598,7 +598,7 @@
       pointer-events:auto;
       background:rgba(0,200,255,0.1); border:1px solid rgba(0,200,255,0.3);
       color:#7af; font-size:11px; border-radius:8px; padding:4px 9px; cursor:pointer;
-    ">🐞 Log</button>
+    ">Log</button>
   </div>
 
   <!-- Debug-Log-Overlay (im AR via dom-overlay sichtbar) -->
@@ -612,16 +612,16 @@
 
   <div class="ar-stage">
     <div id="badge">Lade Handabdrücke…</div>
-    <div id="toast">Handabdruck hinterlassen! 🖐️</div>
+    <div id="toast">Handabdruck hinterlassen! </div>
     <div id="mode-badge">· · ·</div>
-    <button id="reset-btn" title="Tracking zurücksetzen">↺ Reset</button>
+    <button id="reset-btn" title="Tracking zurücksetzen">Reset</button>
     <button id="calib-btn" title="Referenzfläche neu wählen" style="
       position:absolute; bottom:44px; right:12px;
       background:rgba(0,10,30,0.75); border:1px solid rgba(0,200,255,0.25);
       border-radius:10px; padding:5px 12px; font-size:12px; color:#7af;
       cursor:pointer; pointer-events:auto; display:none;
       align-items:center; gap:5px;
-    ">🎯 Kalibrieren</button>
+    ">Kalibrieren</button>
   </div>
 
   <!-- Bottom Sheet (innerhalb #ui für dom-overlay) -->
@@ -629,9 +629,9 @@
   <div id="sheet-handle"></div>
 
   <div id="sheet-peek">
-    <span id="sheet-peek-label">🖐️ Handabdruck hinterlassen</span>
+    <span id="sheet-peek-label">Handabdruck hinterlassen</span>
     <span id="sheet-peek-count">0 Abdrücke</span>
-    <span id="sheet-chevron">▲</span>
+    <span id="sheet-chevron">^</span>
   </div>
 
   <div id="sheet-body">
@@ -644,7 +644,7 @@
       <label>Größe</label>
       <input type="range" id="size-sl" min="0.6" max="1.5" step="0.1" value="1.0">
     </div>
-    <button id="add-btn">🖐️ Handabdruck hinterlassen</button>
+    <button id="add-btn">Handabdruck hinterlassen</button>
   </div>
   </div><!-- /#sheet -->
 
@@ -673,7 +673,7 @@
       border-radius:18px; padding:14px 20px; text-align:center; max-width:300px;
       box-shadow:0 0 40px rgba(0,180,255,0.2);
     ">
-      <div style="font-size:14px;font-weight:700;color:#7af;margin-bottom:4px;">🖐️ Hand positionieren</div>
+      <div style="font-size:14px;font-weight:700;color:#7af;margin-bottom:4px;">Hand positionieren</div>
       <div style="font-size:12px;color:#9ab;line-height:1.5;">Bewege das Handy auf Wand, Boden oder Objekt –<br>die Hand erscheint dort. Dann „Platzieren".</div>
     </div>
     <div style="display:flex; gap:12px;">
@@ -689,7 +689,7 @@
         border:none; border-radius:12px; font-weight:700;
         color:#001; font-size:15px; cursor:pointer;
         box-shadow:0 0 24px rgba(0,180,255,0.35);
-      ">✓ Platzieren</button>
+      ">Platzieren</button>
     </div>
   </div>
 
@@ -705,7 +705,7 @@
       border-radius:18px; padding:14px 20px; text-align:center; max-width:300px;
       box-shadow:0 0 40px rgba(0,180,255,0.2);
     ">
-      <div style="font-size:14px;font-weight:700;color:#7af;margin-bottom:4px;">🎯 Referenzfläche wählen</div>
+      <div style="font-size:14px;font-weight:700;color:#7af;margin-bottom:4px;">Referenzfläche wählen</div>
       <div style="font-size:12px;color:#9ab;line-height:1.5;">Richte das Handy auf die Wand/den Boden,<br>an dem die Hände verankert sein sollen.</div>
     </div>
     <div style="display:flex; gap:12px;">
@@ -721,7 +721,7 @@
         border:none; border-radius:12px; font-weight:700;
         color:#001; font-size:15px; cursor:pointer;
         box-shadow:0 0 24px rgba(0,220,180,0.35);
-      ">✓ Verankern</button>
+      ">Verankern</button>
     </div>
   </div>
 
@@ -756,7 +756,7 @@
 
 <script>
 /* ─── Konfiguration ─── */
-const APP_VERSION   = 'p21 · depth-sensing+smaller-hand';   // bei jedem Patch hochzählen
+const APP_VERSION   = 'p22 · no-emoji';   // bei jedem Patch hochzählen
 const EXHIBITION_ID = '1';
 const COLORS = [
   '#00cfff','#ff3dac','#39ff14','#ff6b00',
@@ -771,7 +771,7 @@ const HAND_W       = 0.25;   // Abdruck-Breite in m (realistisch, nicht riesig)
 /* ─── WebXR Depth Sensing aktivieren (A-Frame reicht die Config nicht durch) ───
    Patcht requestSession, um depth-sensing + Config zu injizieren. Damit lassen
    sich auch glatte/untexturierte Wände erkennen (echte Tiefe statt Feature-
-   Points). Optional → bricht nicht, wenn das Gerät kein Depth kann. */
+   Points). Optional bricht nicht, wenn das Gerät kein Depth kann. */
 (function enableDepthSensing() {
   if (!navigator.xr || !navigator.xr.requestSession) return;
   const orig = navigator.xr.requestSession.bind(navigator.xr);
@@ -1047,19 +1047,19 @@ function classifyNormal(n) {
 window.vlog = vlog; window.normalOf = normalOf; window.classifyNormal = classifyNormal;
 
 window.addEventListener('error', e =>
-  dbg('❌ JS ERROR:', e.message, '@', (e.filename || '') + ':' + (e.lineno || '')));
+  dbg('JS ERROR:', e.message, '@', (e.filename || '') + ':' + (e.lineno || '')));
 window.addEventListener('unhandledrejection', e =>
-  dbg('❌ PROMISE REJECT:', (e.reason && (e.reason.message || e.reason)) || 'unknown'));
+  dbg('PROMISE REJECT:', (e.reason && (e.reason.message || e.reason)) || 'unknown'));
 document.getElementById('version-badge').textContent = APP_VERSION;
 dbg('=== VERSION', APP_VERSION, '=== UA:', navigator.userAgent);
 document.getElementById('dbg-toggle').onclick = () => {
   const el = document.getElementById('dbg-log');
   el.style.display = (el.style.display === 'none') ? 'block' : 'none';
 };
-// Jeden Tap mitschreiben → Korrelation mit Fehlern/Freeze
+// Jeden Tap mitschreiben Korrelation mit Fehlern/Freeze
 document.addEventListener('pointerdown', e => {
   const t = e.target;
-  dbg('👆 tap @', Math.round(e.clientX) + ',' + Math.round(e.clientY),
+  dbg('tap @', Math.round(e.clientX) + ',' + Math.round(e.clientY),
       'auf', t.id || t.className || t.tagName);
 }, { capture: true });
 
@@ -1070,23 +1070,23 @@ function startFallbackCamera() {
     video: { facingMode: 'environment', width: { ideal: 1280 } }, audio: false,
   }).then(s => {
     document.getElementById('fallback-video').srcObject = s;
-    dbg('  ✓ getUserMedia ok, tracks=', s.getTracks().length);
-  }).catch(err => dbg('  ✗ getUserMedia FAIL:', err.name, err.message));
+    dbg('  getUserMedia ok, tracks=', s.getTracks().length);
+  }).catch(err => dbg('  getUserMedia FAIL:', err.name, err.message));
 
   function applyAlpha() { sceneEl.renderer.setClearColor(0x000000, 0); }
   if (sceneEl.renderer) applyAlpha();
   else sceneEl.addEventListener('renderstart', applyAlpha, { once: true });
 }
 
-/* ─── Fallback-Kamera stoppen (vor WebXR, sonst Kamera-Konflikt → Freeze) ─── */
+/* ─── Fallback-Kamera stoppen (vor WebXR, sonst Kamera-Konflikt Freeze) ─── */
 function stopFallbackCamera() {
   const vid = document.getElementById('fallback-video');
   if (vid && vid.srcObject) {
     vid.srcObject.getTracks().forEach(t => { try { t.stop(); } catch (_) {} });
     vid.srcObject = null;
-    dbg('stopFallbackCamera() → tracks gestoppt');
+    dbg('stopFallbackCamera() tracks gestoppt');
   } else {
-    dbg('stopFallbackCamera() → kein aktiver Stream');
+    dbg('stopFallbackCamera() kein aktiver Stream');
   }
 }
 
@@ -1102,22 +1102,22 @@ async function init() {
   dbg('init: hasWebXR=', hasWebXR, ' needsIOSPerm=', needsIOSPerm, ' navigator.xr=', !!navigator.xr);
 
   if (hasWebXR) {
-    modeBadge.textContent = '📡 Tippe zum Starten';
+    modeBadge.textContent = 'Tippe zum Starten';
     startFallbackCamera();
     // Browser erfordert User-Gesture für WebXR — erster Tap startet AR
     let arStarted = false;
     const startAR = () => {
-      if (arStarted) return;          // click + touchend feuern beide → nur einmal
+      if (arStarted) return;          // click + touchend feuern beide nur einmal
       arStarted = true;
-      dbg('startAR: Tap erkannt → stoppe Kamera, dann enterAR()');
+      dbg('startAR: Tap erkannt stoppe Kamera, dann enterAR()');
       // WICHTIG: Fallback-Kamera freigeben, sonst hält sie die Kamera und
       // WebXR friert ein (Kamera kann nicht doppelt belegt werden).
       stopFallbackCamera();
-      modeBadge.textContent = '📡 AR startet…';
+      modeBadge.textContent = 'AR startet…';
       sceneEl.enterAR()
-        .then(() => dbg('  ✓ enterAR() promise resolved'))
+        .then(() => dbg('  enterAR() promise resolved'))
         .catch(err => {
-          dbg('  ✗ enterAR FAIL:', err && (err.name + ' ' + err.message));
+          dbg('  enterAR FAIL:', err && (err.name + ' ' + err.message));
           arStarted = false;
           startFallbackCamera();      // zurück in Vorschau
         });
@@ -1126,24 +1126,24 @@ async function init() {
     document.querySelector('.ar-stage').addEventListener('touchend', startAR);
 
   } else if (needsIOSPerm) {
-    modeBadge.textContent = '📱 iOS · Tippe zum Starten';
+    modeBadge.textContent = 'iOS · Tippe zum Starten';
     startFallbackCamera();
     document.querySelector('.ar-stage').addEventListener('click', async () => {
       await DeviceOrientationEvent.requestPermission().catch(() => {});
-      modeBadge.textContent = '📱 iOS Gyro';
+      modeBadge.textContent = 'iOS Gyro';
     }, { once: true });
 
   } else {
-    modeBadge.textContent = '📱 Gyro-Modus';
+    modeBadge.textContent = 'Gyro-Modus';
     startFallbackCamera();
   }
 }
 
 sceneEl.addEventListener('enter-vr', () => {
-  dbg('▶ enter-vr (AR aktiv). is(ar-mode)=', sceneEl.is && sceneEl.is('ar-mode'));
+  dbg('enter-vr (AR aktiv). is(ar-mode)=', sceneEl.is && sceneEl.is('ar-mode'));
   document.getElementById('fallback-video').style.display = 'none';
   stopFallbackCamera();   // sicherheitshalber nochmal: kein doppelter Kamera-Zugriff
-  document.getElementById('mode-badge').textContent = '📡 AR · Flächenerkennung';
+  document.getElementById('mode-badge').textContent = 'AR · Flächenerkennung';
   // Cursor mouse+xrselect sind deklarativ gesetzt (kein Laufzeit-Umschalten,
   // das verursachte den 'reading xr'-Crash).
   // Kalibrier-Button zeigen + beim Start einmal Referenzfläche anbieten.
@@ -1152,10 +1152,10 @@ sceneEl.addEventListener('enter-vr', () => {
   setTimeout(() => { if (sceneEl.is('ar-mode') || sceneEl.is('vr-mode')) startCalibration(); }, 800);
 });
 sceneEl.addEventListener('exit-vr', () => {
-  dbg('◀ exit-vr (AR beendet)');
+  dbg('exit-vr (AR beendet)');
   document.getElementById('fallback-video').style.display = '';
   startFallbackCamera();
-  document.getElementById('mode-badge').textContent = '📱 Gyro-Modus';
+  document.getElementById('mode-badge').textContent = 'Gyro-Modus';
   document.getElementById('calib-btn').style.display = 'none';
   calibMode = false;
   document.getElementById('calib-overlay').style.display = 'none';
@@ -1191,10 +1191,10 @@ function hidePopup() {
 }
 
 document.getElementById('popup-close').onclick = hidePopup;
-// Backdrop fängt Taps ab → schließt Popup, Abdrücke dahinter bleiben unberührt
+// Backdrop fängt Taps ab schließt Popup, Abdrücke dahinter bleiben unberührt
 document.getElementById('popup-backdrop').onclick = hidePopup;
 // im WebXR-dom-overlay den XR-Select global unterdrücken, solange ein Popup
-// offen ist (auch beim Tap auf den Schließen-Button) → kein Durchschlagen.
+// offen ist (auch beim Tap auf den Schließen-Button) kein Durchschlagen.
 document.getElementById('ui').addEventListener('beforexrselect', e => {
   if (popupOpen) e.preventDefault();
 });
@@ -1239,7 +1239,7 @@ document.getElementById('reset-btn').onclick = async () => {
     await new Promise(r => setTimeout(r, 300));
     startFallbackCamera();
 
-    btn.textContent = '✓';
+    btn.textContent = 'OK';
     btn.style.color   = '#0f9';
     btn.style.opacity = '1';
     await new Promise(r => setTimeout(r, 1000));
@@ -1251,7 +1251,7 @@ document.getElementById('reset-btn').onclick = async () => {
     await new Promise(r => setTimeout(r, 1500));
   }
 
-  btn.innerHTML     = '↺ Reset';
+  btn.innerHTML     = 'Reset';
   btn.style.color   = '';
   btn.style.opacity = '';
   resetBusy = false;
@@ -1278,7 +1278,7 @@ sceneEl.addEventListener('loaded', () => {
     sheet.classList.toggle('collapsed', !val);
   }
 
-  // Tap peek row → expand; tap handle when expanded → collapse
+  // Tap peek row expand; tap handle when expanded collapse
   peek.addEventListener('click', () => { if (!expanded) setExpanded(true); });
   handle.addEventListener('click', () => setExpanded(!expanded));
 
@@ -1329,7 +1329,7 @@ let placeModeActive  = false;
 let calibMode        = false;
 let anchorSet        = false;
 
-/* Welt-Pose → Koordinaten relativ zum Anchor (#fp-root). Bei Identity-Anchor
+/* Welt-Pose Koordinaten relativ zum Anchor (#fp-root). Bei Identity-Anchor
    unverändert. So bewegt Neukalibrieren alle Hände als Gruppe mit. */
 function worldToAnchorLocal(px, py, pz, qx, qy, qz, qw) {
   const root = document.getElementById('fp-root').object3D;
@@ -1346,8 +1346,8 @@ function worldToAnchorLocal(px, py, pz, qx, qy, qz, qw) {
 }
 
 /* Anchor (#fp-root) = Kalibrierpose (Position + Rotation). Abdrücke sind
-   Kinder von #fp-root mit relativen Koordinaten → erscheinen ZENTRIERT um
-   den Kalibrierpunkt. Statisch (kein XR-Anchor → keine Crashes/Sprünge);
+   Kinder von #fp-root mit relativen Koordinaten erscheinen ZENTRIERT um
+   den Kalibrierpunkt. Statisch (kein XR-Anchor keine Crashes/Sprünge);
    gegen Drift einfach neu kalibrieren. */
 function setAnchorFromPose(pose) {
   const root = document.getElementById('fp-root').object3D;
@@ -1357,7 +1357,7 @@ function setAnchorFromPose(pose) {
   root.updateMatrixWorld(true);
   anchorSet = true;
   const n = normalOf(o.x, o.y, o.z, o.w);
-  vlog('🎯 anchor-set', {
+  vlog('anchor-set', {
     pos: [p.x, p.y, p.z], quat: [o.x, o.y, o.z, o.w],
     normal: [n.x, n.y, n.z], surf: classifyNormal(n)
   });
@@ -1402,7 +1402,7 @@ async function confirmPlacement(x, y, z, qx, qy, qz, qw) {
     dbg('  POST status=', res.status);
     await loadFootprints();
   } catch (e) {
-    dbg('  ❌ POST FAIL:', e && e.message);
+    dbg('  POST FAIL:', e && e.message);
   }
   pendingFp = null;
 
@@ -1424,13 +1424,13 @@ function updatePreviewHand(col, sz) {
 /* ─── Platzieren-Button: Hand an aktueller Vorschau-Position lassen ─── */
 document.getElementById('place-confirm').onclick = () => {
   if (!placeModeActive || !pendingFp) return;
-  // A-Frame nutzt im AR den State 'ar-mode' (nicht 'vr-mode') → beide prüfen,
+  // A-Frame nutzt im AR den State 'ar-mode' (nicht 'vr-mode') beide prüfen,
   // sonst landet jede AR-Platzierung fälschlich im Gyro-Fallback (Boden).
   const inVR = !!(sceneEl.is && (sceneEl.is('ar-mode') || sceneEl.is('vr-mode')));
   if (inVR) {
     const pose = sceneEl.components['fp-hit-test']?.lastPose;
     dbg('confirm-btn: inVR, hatPose=', !!pose);
-    if (!pose) { dbg('  → keine Fläche erkannt, bewege das Handy'); return; }
+    if (!pose) { dbg('  keine Fläche erkannt, bewege das Handy'); return; }
     const p = pose.transform.position, o = pose.transform.orientation;
     confirmPlacement(p.x, p.y, p.z, o.x, o.y, o.z, o.w);
   } else {
@@ -1465,7 +1465,7 @@ document.getElementById('calib-confirm').onclick = () => {
   if (!calibMode) return;
   const pose = sceneEl.components['fp-hit-test']?.lastPose;
   dbg('calib-confirm: hatPose=', !!pose);
-  if (!pose) { dbg('  → keine Pose (sollte mit Fallback nicht passieren)'); return; }
+  if (!pose) { dbg('  keine Pose (sollte mit Fallback nicht passieren)'); return; }
   setAnchorFromPose(pose);   // statischer Voll-Posen-Anchor
   endCalibration();
   loadFootprints();

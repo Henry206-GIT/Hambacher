@@ -16,7 +16,7 @@ HEADER=()
 
 # Server erreichbar?
 if ! curl -sf -o /dev/null "$HOST/"; then
-  echo "❌ Server nicht erreichbar unter $HOST."
+  echo "Server nicht erreichbar unter $HOST."
   echo "   Erst ./start.sh starten (oder HOST=... setzen)."
   exit 1
 fi
@@ -27,8 +27,8 @@ BEFORE=$(curl -s "$HOST/api/footprints/$EXHIBITION" | grep -o '"id"' | wc -l | t
 RESP=$(curl -s -X DELETE "${HEADER[@]}" "$HOST/api/footprints/$EXHIBITION")
 
 if echo "$RESP" | grep -q '"ok":true'; then
-  echo "✓ Ausstellung $EXHIBITION zurückgesetzt – $BEFORE Abdrücke gelöscht."
+  echo "Ausstellung $EXHIBITION zurückgesetzt – $BEFORE Abdrücke gelöscht."
 else
-  echo "❌ Fehler beim Zurücksetzen: $RESP"
+  echo "Fehler beim Zurücksetzen: $RESP"
   exit 1
 fi
