@@ -228,23 +228,6 @@
         if (!frame) return;
         const ref     = xr.getReferenceSpace();
 
-        // #fp-root jeden Frame an den echten XR-Anchor binden (drift-stabil).
-        // ARCore korrigiert die Anchor-Pose laufend → Hände bleiben real fix.
-        if (window.xrAnchor) {
-          const ap = frame.getPose(window.xrAnchor.anchorSpace, ref);
-          if (ap) {
-            const root = document.getElementById('fp-root').object3D;
-            const t = ap.transform;
-            root.position.set(t.position.x, t.position.y, t.position.z);
-            root.quaternion.set(t.orientation.x, t.orientation.y, t.orientation.z, t.orientation.w);
-            if (window.vlog && ((this._af = (this._af || 0) + 1) % 60 === 0)) {
-              window.vlog('anchor-track', { pos: [t.position.x, t.position.y, t.position.z] });
-            }
-          } else if (window.vlog && ((this._af = (this._af || 0) + 1) % 60 === 0)) {
-            window.vlog('anchor-track', { lost: true });
-          }
-        }
-
         const results = frame.getHitTestResults(this.hitTestSource);
         const reticle = document.getElementById('reticle');
         if (!reticle) return;
@@ -259,7 +242,8 @@
           const pose = results[0].getPose(ref);
           if (pose) {
             this.lastPose   = pose;
-            this.lastResult = results[0];   // für createAnchor() bei Kalibrierung
+            this.lastResult = results[0];
+            this._fallback  = false;
             const p = pose.transform.position;
             const o = pose.transform.orientation;
             reticle.object3D.position.set(p.x, p.y + 0.002, p.z);
@@ -274,9 +258,35 @@
               });
             }
           }
+        } else if (placing) {
+          // Fallback: keine Fläche erkannt → Reticle an festem Abstand vor der
+          // Kamera, Orientierung aus Blickrichtung geschätzt. So gehen
+          // Kalibrieren/Platzieren auch an untexturierten Wänden.
+          const camO = document.getElementById('cam3d').object3D;
+          camO.updateMatrixWorld();
+          const camPos = new THREE.Vector3(); camO.getWorldPosition(camPos);
+          const camQ   = new THREE.Quaternion(); camO.getWorldQuaternion(camQ);
+          const fwd    = new THREE.Vector3(0, 0, -1).applyQuaternion(camQ);
+          const target = camPos.clone().addScaledVector(fwd, 1.2);
+          // Blick eher horizontal → Wand (Normale zur Kamera), sonst Boden
+          const normal = (Math.abs(fwd.y) < 0.45)
+            ? new THREE.Vector3(-fwd.x, 0, -fwd.z).normalize()
+            : new THREE.Vector3(0, 1, 0);
+          const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
+          reticle.object3D.position.copy(target);
+          reticle.object3D.quaternion.copy(quat);
+          reticle.setAttribute('visible', true);
+          // synthetische Pose für confirm/calib
+          this.lastPose = { transform: {
+            position:    { x: target.x, y: target.y, z: target.z },
+            orientation: { x: quat.x, y: quat.y, z: quat.z, w: quat.w },
+          }};
+          this.lastResult = null;
+          this._fallback = true;
+          if (verbose) window.vlog('hit', { cnt: 0, fallback: true, surf: window.classifyNormal(normal) });
         } else {
           reticle.setAttribute('visible', false);
-          if (verbose) window.vlog('hit', { cnt: 0, placeMode: !!placeModeActive, calib: !!calibMode });
+          this._fallback = false;
         }
 
         // Live-Erkennungsstatus + Hinweise wenn keine Fläche erkannt wird
@@ -291,15 +301,15 @@
                 ds.textContent = '✓ Fläche erkannt – jetzt verankern/platzieren';
                 ds.style.background = 'rgba(0,170,90,0.92)';
               } else {
+                // Fallback aktiv → Platzieren trotzdem möglich (Schätzposition)
                 const tips = [
-                  '⚠ Keine Fläche erkannt',
+                  '⚠ Keine echte Fläche – Schätzposition (Platzieren geht trotzdem)',
+                  '→ für echte Wand: auf Struktur zielen (Kante, Poster, Muster)',
                   '→ Handy langsam hin- und herschwenken',
-                  '→ auf Struktur zielen: Kante, Poster, Muster',
-                  '→ Abstand 0,5–2 m halten',
-                  '→ für mehr Licht sorgen',
+                  '→ Abstand 0,5–2 m halten · mehr Licht',
                 ];
                 ds.textContent = tips[Math.floor(this._vf / 40) % tips.length];
-                ds.style.background = 'rgba(210,70,40,0.92)';
+                ds.style.background = 'rgba(210,120,40,0.92)';
               }
             }
           } else if (this._lastHas !== undefined) {
@@ -531,7 +541,7 @@
   renderer="alpha: true; antialias: true; colorManagement: true; sortObjects: true"
   loading-screen="enabled: false"
   device-orientation-permission-ui="enabled: false"
-  webxr="requiredFeatures: local; optionalFeatures: local-floor,dom-overlay,hit-test,anchors,plane-detection; overlayElement: #ui;"
+  webxr="requiredFeatures: local; optionalFeatures: local-floor,dom-overlay,hit-test,plane-detection; overlayElement: #ui;"
   fp-hit-test
   cursor__mouse="rayOrigin: mouse; fuse: false"
   cursor__xrselect="rayOrigin: xrselect; fuse: false"
@@ -734,7 +744,7 @@
 
 <script>
 /* ─── Konfiguration ─── */
-const APP_VERSION   = 'p19 · calib-no-offset';   // bei jedem Patch hochzählen
+const APP_VERSION   = 'p20 · static-anchor+fallback';   // bei jedem Patch hochzählen
 const EXHIBITION_ID = '1';
 const COLORS = [
   '#00cfff','#ff3dac','#39ff14','#ff6b00',
@@ -1115,7 +1125,6 @@ sceneEl.addEventListener('exit-vr', () => {
   document.getElementById('calib-btn').style.display = 'none';
   calibMode = false;
   document.getElementById('calib-overlay').style.display = 'none';
-  window.xrAnchor = null;   // Anchor ist session-gebunden → bei AR-Ende verwerfen
   anchorSet = false;
 });
 
@@ -1302,43 +1311,21 @@ function worldToAnchorLocal(px, py, pz, qx, qy, qz, qw) {
   return { x: p.x, y: p.y, z: p.z, quat_x: q.x, quat_y: q.y, quat_z: q.z, quat_w: q.w };
 }
 
-/* Anchor (#fp-root) auf die getippte Fläche setzen. WICHTIG: bestehende
-   Abdrücke behalten ihre WELT-Position — sie springen nicht mit dem Anchor
-   mit. Der Anchor dient nur als drift-stabile Referenz (XR-Anchor folgt ihm
-   pro Frame). So gibt es beim Neukalibrieren keinen Offset mehr. */
+/* Anchor (#fp-root) = Kalibrierpose (Position + Rotation). Abdrücke sind
+   Kinder von #fp-root mit relativen Koordinaten → erscheinen ZENTRIERT um
+   den Kalibrierpunkt. Statisch (kein XR-Anchor → keine Crashes/Sprünge);
+   gegen Drift einfach neu kalibrieren. */
 function setAnchorFromPose(pose) {
   const root = document.getElementById('fp-root').object3D;
-
-  // 1. Welt-Posen aller bestehenden Abdrücke merken
-  root.updateMatrixWorld(true);
-  const saved = root.children.map(c => {
-    const wp = new THREE.Vector3(), wq = new THREE.Quaternion(), ws = new THREE.Vector3();
-    c.matrixWorld.decompose(wp, wq, ws);
-    return { c, wp, wq };
-  });
-
-  // 2. Anchor neu setzen
   const p = pose.transform.position, o = pose.transform.orientation;
   root.position.set(p.x, p.y, p.z);
   root.quaternion.set(o.x, o.y, o.z, o.w);
   root.updateMatrixWorld(true);
-
-  // 3. Abdrücke so umrechnen, dass ihre Welt-Pose unverändert bleibt
-  const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
-  saved.forEach(({ c, wp, wq }) => {
-    const world = new THREE.Matrix4().compose(wp, wq, new THREE.Vector3(1, 1, 1));
-    const local = inv.clone().multiply(world);
-    const lp = new THREE.Vector3(), lq = new THREE.Quaternion(), ls = new THREE.Vector3();
-    local.decompose(lp, lq, ls);
-    c.position.copy(lp);
-    c.quaternion.copy(lq);
-  });
-
   anchorSet = true;
   const n = normalOf(o.x, o.y, o.z, o.w);
   vlog('🎯 anchor-set', {
     pos: [p.x, p.y, p.z], quat: [o.x, o.y, o.z, o.w],
-    normal: [n.x, n.y, n.z], surf: classifyNormal(n), kept: saved.length
+    normal: [n.x, n.y, n.z], surf: classifyNormal(n)
   });
 }
 
@@ -1442,37 +1429,12 @@ function endCalibration() {
 
 document.getElementById('calib-confirm').onclick = () => {
   if (!calibMode) return;
-  const ht     = sceneEl.components['fp-hit-test'];
-  const pose   = ht?.lastPose;
-  const result = ht?.lastResult;
-  dbg('calib-confirm: hatPose=', !!pose, ' canAnchor=', !!(result && result.createAnchor));
-  if (!pose) { dbg('  → keine Fläche erkannt, Handy bewegen'); return; }
-
-  // alten Anchor freigeben (ARCore-Budget)
-  if (window.xrAnchor && window.xrAnchor.delete) { try { window.xrAnchor.delete(); } catch (_) {} }
-  window.xrAnchor = null;
-
-  // Bevorzugt einen ECHTEN XR-Anchor erstellen (ARCore hält ihn drift-stabil).
-  // Fallback: statische Pose, falls das Gerät keine Anchors unterstützt.
-  if (result && result.createAnchor) {
-    result.createAnchor().then(anchor => {
-      window.xrAnchor = anchor;
-      anchorSet = true;
-      setAnchorFromPose(pose);   // sofortige Startpose; Tick übernimmt danach den Anchor
-      dbg('🎯 XR-Anchor erstellt (drift-stabil)');
-      loadFootprints();
-    }).catch(e => {
-      window.xrAnchor = null;
-      dbg('createAnchor FAIL → statischer Anchor:', e && e.message);
-      setAnchorFromPose(pose);
-      loadFootprints();
-    });
-  } else {
-    window.xrAnchor = null;
-    setAnchorFromPose(pose);
-    loadFootprints();
-  }
+  const pose = sceneEl.components['fp-hit-test']?.lastPose;
+  dbg('calib-confirm: hatPose=', !!pose);
+  if (!pose) { dbg('  → keine Pose (sollte mit Fallback nicht passieren)'); return; }
+  setAnchorFromPose(pose);   // statischer Voll-Posen-Anchor
   endCalibration();
+  loadFootprints();
 };
 
 document.getElementById('calib-skip').onclick = () => {
