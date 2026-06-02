@@ -4,6 +4,23 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Hambacher Schloss – Digitale Handabdrücke</title>
+
+  <!-- ════════════════════════════════════════════════════════════════
+       Variant Launch SDK – echtes markerloses WebXR-AR auf iOS (ARKit via
+       App Clip) + natives WebXR auf Android. Muss VOR A-Frame geladen werden.
+       SDK-Key bei https://launch.variant3d.com kostenlos holen, App-URL dort
+       registrieren, und unten eintragen. Leer = iOS bleibt im Gyro-Fallback.
+       ════════════════════════════════════════════════════════════════ -->
+  <script>
+    window.VARIANT_SDK_KEY = '';   // <<< HIER deinen Variant-Launch-SDK-Key eintragen
+    if (window.VARIANT_SDK_KEY) {
+      document.write(
+        '<scr' + 'ipt src="https://launchar.app/sdk/v1?key=' +
+        encodeURIComponent(window.VARIANT_SDK_KEY) + '&redirect=true"></scr' + 'ipt>'
+      );
+    }
+  </script>
+
   <script src="https://aframe.io/releases/1.4.0/aframe.min.js" crossorigin="anonymous"></script>
 
   <script>
@@ -751,7 +768,7 @@
 
 <script>
 /* ─── Konfiguration ─── */
-const APP_VERSION   = 'p24 · ios-ar-mode';   // bei jedem Patch hochzählen
+const APP_VERSION   = 'p25 · variant-launch-ready';   // bei jedem Patch hochzählen
 const EXHIBITION_ID = '1';
 const COLORS = [
   '#00cfff','#ff3dac','#39ff14','#ff6b00',
