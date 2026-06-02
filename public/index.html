@@ -259,31 +259,43 @@
             }
           }
         } else if (placing) {
-          // Fallback: keine Fläche erkannt → Reticle an festem Abstand vor der
-          // Kamera, Orientierung aus Blickrichtung geschätzt. So gehen
-          // Kalibrieren/Platzieren auch an untexturierten Wänden.
+          // Kein Plane-Hit → Depth-Sensing nutzen (echte Distanz zur Wand,
+          // auch untexturiert). Fällt auf festen Abstand zurück, wenn keine
+          // Tiefe verfügbar. Orientierung aus Blickrichtung geschätzt.
           const camO = document.getElementById('cam3d').object3D;
           camO.updateMatrixWorld();
           const camPos = new THREE.Vector3(); camO.getWorldPosition(camPos);
           const camQ   = new THREE.Quaternion(); camO.getWorldQuaternion(camQ);
           const fwd    = new THREE.Vector3(0, 0, -1).applyQuaternion(camQ);
-          const target = camPos.clone().addScaledVector(fwd, 1.2);
-          // Blick eher horizontal → Wand (Normale zur Kamera), sonst Boden
+
+          // Tiefe am Bildmittelpunkt holen
+          let dist = 1.2, depthOk = false;
+          try {
+            const vp = frame.getViewerPose(ref);
+            const view = vp && vp.views[0];
+            const di = view && frame.getDepthInformation && frame.getDepthInformation(view);
+            if (di) {
+              const d = di.getDepthInMeters(0.5, 0.5);
+              if (isFinite(d) && d > 0.2 && d < 8) { dist = d; depthOk = true; }
+            }
+          } catch (_) {}
+
+          const target = camPos.clone().addScaledVector(fwd, dist);
           const normal = (Math.abs(fwd.y) < 0.45)
-            ? new THREE.Vector3(-fwd.x, 0, -fwd.z).normalize()
-            : new THREE.Vector3(0, 1, 0);
+            ? new THREE.Vector3(-fwd.x, 0, -fwd.z).normalize()   // Wand
+            : new THREE.Vector3(0, 1, 0);                         // Boden
           const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
           reticle.object3D.position.copy(target);
           reticle.object3D.quaternion.copy(quat);
           reticle.setAttribute('visible', true);
-          // synthetische Pose für confirm/calib
           this.lastPose = { transform: {
             position:    { x: target.x, y: target.y, z: target.z },
             orientation: { x: quat.x, y: quat.y, z: quat.z, w: quat.w },
           }};
           this.lastResult = null;
-          this._fallback = true;
-          if (verbose) window.vlog('hit', { cnt: 0, fallback: true, surf: window.classifyNormal(normal) });
+          this._fallback   = true;
+          this._depthOk    = depthOk;
+          if (verbose) window.vlog('hit', { cnt: 0, fallback: true, depth: depthOk, dist: dist, surf: window.classifyNormal(normal) });
         } else {
           reticle.setAttribute('visible', false);
           this._fallback = false;
@@ -559,7 +571,7 @@
 
   <!-- Platzierungs-Vorschau: echte Hand (Hologramm) folgt der Fläche -->
   <a-entity id="reticle" visible="false">
-    <a-plane id="reticle-hand" width="0.5" height="0.633"
+    <a-plane id="reticle-hand" width="0.25" height="0.316"
              rotation="-90 0 0" position="0 0.004 0" holo-mat="color: #00cfff"></a-plane>
   </a-entity>
 
@@ -744,7 +756,7 @@
 
 <script>
 /* ─── Konfiguration ─── */
-const APP_VERSION   = 'p20 · static-anchor+fallback';   // bei jedem Patch hochzählen
+const APP_VERSION   = 'p21 · depth-sensing+smaller-hand';   // bei jedem Patch hochzählen
 const EXHIBITION_ID = '1';
 const COLORS = [
   '#00cfff','#ff3dac','#39ff14','#ff6b00',
@@ -754,6 +766,28 @@ const COLORS = [
 let selectedColor = COLORS[0];
 const renderedIds  = new Set();
 const sceneEl      = document.querySelector('a-scene');
+const HAND_W       = 0.25;   // Abdruck-Breite in m (realistisch, nicht riesig)
+
+/* ─── WebXR Depth Sensing aktivieren (A-Frame reicht die Config nicht durch) ───
+   Patcht requestSession, um depth-sensing + Config zu injizieren. Damit lassen
+   sich auch glatte/untexturierte Wände erkennen (echte Tiefe statt Feature-
+   Points). Optional → bricht nicht, wenn das Gerät kein Depth kann. */
+(function enableDepthSensing() {
+  if (!navigator.xr || !navigator.xr.requestSession) return;
+  const orig = navigator.xr.requestSession.bind(navigator.xr);
+  navigator.xr.requestSession = function (mode, opts) {
+    if (mode === 'immersive-ar') {
+      opts = opts || {};
+      opts.optionalFeatures = Array.from(new Set([...(opts.optionalFeatures || []), 'depth-sensing']));
+      opts.depthSensing = {
+        usagePreference:      ['cpu-optimized', 'gpu-optimized'],
+        dataFormatPreference: ['luminance-alpha', 'float32'],
+      };
+      (window.dbg || function(){})('depth-sensing in Session-Request injiziert');
+    }
+    return orig(mode, opts);
+  };
+})();
 
 /* ─── Handabdruck-Canvas zeichnen ─── */
 function makeHandCanvas(baseColor) {
@@ -841,7 +875,7 @@ function spawnHandprint(fp) {
   renderedIds.add(fp.id);
 
   const sz  = 1.0;            // einheitliche Größe für ALLE Abdrücke
-  const W   = 0.50 * sz;
+  const W   = HAND_W * sz;
   const H   = W * (380 / 300);
   const col = fp.color || '#00cfff';
   const y   = fp.y != null ? fp.y : 0;
@@ -885,12 +919,12 @@ function spawnHandprint(fp) {
 
   /* -- Pulsierender Glow-Ring -- */
   const ring = document.createElement('a-entity');
-  ring.setAttribute('pulse-ring', `color: ${col}; r: ${0.28 * sz}`);
+  ring.setAttribute('pulse-ring', `color: ${col}; r: ${0.16 * sz}`);
   wrap.appendChild(ring);
 
   /* -- Äußerer statischer Ring -- */
   const outerRing = document.createElement('a-torus');
-  outerRing.setAttribute('radius',        0.34 * sz);
+  outerRing.setAttribute('radius',        0.19 * sz);
   outerRing.setAttribute('radius-tubular', 0.004);
   outerRing.setAttribute('rotation',      '-90 0 0');
   outerRing.setAttribute('position',      '0 0.002 0');
@@ -902,7 +936,7 @@ function spawnHandprint(fp) {
 
   /* -- Name-Label (Billboard, schwebt über Handabdruck) -- */
   const labelWrap = document.createElement('a-entity');
-  labelWrap.setAttribute('position', `0 0.22 0`);
+  labelWrap.setAttribute('position', `0 0.16 0`);
   labelWrap.setAttribute('billboard', '');
 
   const lblW = Math.min(0.65, 0.12 + fp.name.length * 0.025) * sz;
