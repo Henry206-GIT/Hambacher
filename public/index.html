@@ -768,7 +768,7 @@
 
 <script>
 /* ─── Konfiguration ─── */
-const APP_VERSION   = 'p25 · variant-launch-ready';   // bei jedem Patch hochzählen
+const APP_VERSION   = 'p26 · alvaar-slam-ios';   // bei jedem Patch hochzählen
 const EXHIBITION_ID = '1';
 const COLORS = [
   '#00cfff','#ff3dac','#39ff14','#ff6b00',
@@ -1107,28 +1107,90 @@ const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
             || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)   // iPadOS meldet sich als Mac
             || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 
-/* ─── iOS-AR-Modus (Magic Window) ───
-   Apple-Safari kann kein WebXR-immersive-AR. Dieser Modus ersetzt enter-vr:
-   Kamera-Bild + Geräteorientierung (look-controls magic window) + gleiche
-   AR-UI. Einstieg per Tap (User-Gesture, wie WebXR es verlangt). */
+/* ─── iOS-AR-Modus ───
+   Apple-Safari kann kein WebXR-immersive-AR. Statt nur Gyro nutzen wir AlvaAR
+   (Open-Source-SLAM im Browser) für echtes 6DoF-Kamera-Tracking. Fällt auf
+   Gyro (look-controls magic window) zurück, wenn AlvaAR nicht lädt/trackt. */
 let iosARActive = false;
+let alvaActive  = false;
+
+/* AlvaAR (Vision-SLAM) starten — treibt die A-Frame-Kamera pro Frame */
+async function startAlvaAR() {
+  try {
+    dbg('AlvaAR: lade SDK (~4MB)…');
+    const base = 'https://cdn.jsdelivr.net/gh/alanross/AlvaAR@main/dist/';
+    const [{ AlvaAR }, { AlvaARConnectorTHREE }] = await Promise.all([
+      import(base + 'alva_ar.js'),
+      import(base + 'alva_ar_three.js'),
+    ]);
+    const video = document.getElementById('fallback-video');
+    // auf Video-Maße warten
+    for (let i = 0; i < 60 && !video.videoWidth; i++) await new Promise(r => setTimeout(r, 100));
+    if (!video.videoWidth) { dbg('AlvaAR: kein Video → Gyro'); return false; }
+
+    const W = 480, H = Math.round(W * video.videoHeight / video.videoWidth) || 270;
+    const canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    const ctx  = canvas.getContext('2d', { alpha: false, desynchronized: true });
+    const alva = await AlvaAR.Initialize(W, H);
+    const applyPose = AlvaARConnectorTHREE.Initialize(window.THREE);
+
+    // Kamera von look-controls trennen, FOV 75 (AlvaAR-Annahme)
+    const cam = document.getElementById('cam3d');
+    cam.setAttribute('look-controls', 'enabled', false);
+    cam.setAttribute('camera', 'fov', 75);
+    const camO = cam.object3D;
+    camO.rotation.order = 'YXZ';
+
+    alvaActive = true;
+    window._alva = alva;
+    dbg('AlvaAR: SLAM aktiv ' + W + 'x' + H);
+
+    let last = 0;
+    const loop = (t) => {
+      if (!alvaActive) return;
+      requestAnimationFrame(loop);
+      if (t - last < 33) return;                 // ~30 fps
+      last = t;
+      if (document.hidden || !video.videoWidth) return;
+      try {
+        ctx.drawImage(video, 0, 0, W, H);
+        const frame = ctx.getImageData(0, 0, W, H);
+        const pose  = alva.findCameraPose(frame);
+        if (pose) { applyPose(pose, camO.quaternion, camO.position); window._alvaLost = false; }
+        else      { window._alvaLost = true; }
+      } catch (e) {
+        if (!window._alvaErr) { window._alvaErr = true; dbg('AlvaAR loop err: ' + (e && e.message)); }
+      }
+    };
+    requestAnimationFrame(loop);
+    return true;
+  } catch (e) {
+    dbg('AlvaAR FAIL → Gyro: ' + (e && (e.name + ' ' + e.message)));
+    return false;
+  }
+}
+
 async function enterIOSAR() {
   if (iosARActive) return;
   iosARActive = true;
-  dbg('enterIOSAR: starte iOS-AR-Modus (Gyro)');
-  // Orientierungs-Permission (iOS 13+) im User-Gesture-Kontext
+  dbg('enterIOSAR: starte iOS-AR-Modus');
+  // Orientierungs-Permission (iOS 13+) — für Gyro-Fallback
   if (typeof DeviceOrientationEvent?.requestPermission === 'function') {
     try { await DeviceOrientationEvent.requestPermission(); }
     catch (e) { dbg('  orientation-perm:', e && e.message); }
   }
   startFallbackCamera();
-  document.getElementById('mode-badge').textContent = 'iOS AR · Gyro';
   document.getElementById('calib-btn').style.display = 'flex';
-  // Vollbild versuchen (iOS Safari ignoriert es meist – schadet nicht)
   try { const de = document.documentElement;
     (de.requestFullscreen || de.webkitRequestFullscreen || function(){}).call(de); } catch (_) {}
-  // Kalibrierung anbieten (wie enter-vr auf Android)
-  setTimeout(() => { if (iosARActive) startCalibration(); }, 600);
+
+  // echtes Tracking via AlvaAR versuchen, sonst Gyro
+  const slam = await startAlvaAR();
+  document.getElementById('mode-badge').textContent = slam ? 'iOS AR · SLAM' : 'iOS AR · Gyro';
+
+  // Kalibrierung anbieten (etwas später, damit SLAM erste Posen hat)
+  setTimeout(() => { if (iosARActive) startCalibration(); }, slam ? 1500 : 600);
 }
 
 /* ─── Init ─── */
