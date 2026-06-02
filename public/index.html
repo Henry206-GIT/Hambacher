@@ -768,7 +768,7 @@
 
 <script>
 /* ─── Konfiguration ─── */
-const APP_VERSION   = 'p26 · alvaar-slam-ios';   // bei jedem Patch hochzählen
+const APP_VERSION   = 'p27 · alvaar-tuned';   // bei jedem Patch hochzählen
 const EXHIBITION_ID = '1';
 const COLORS = [
   '#00cfff','#ff3dac','#39ff14','#ff6b00',
@@ -1128,7 +1128,12 @@ async function startAlvaAR() {
     for (let i = 0; i < 60 && !video.videoWidth; i++) await new Promise(r => setTimeout(r, 100));
     if (!video.videoWidth) { dbg('AlvaAR: kein Video → Gyro'); return false; }
 
-    const W = 480, H = Math.round(W * video.videoHeight / video.videoWidth) || 270;
+    // längste Seite auf 400 begrenzen (Performance) — vorher fix 480 Breite
+    // ergab im Hochformat 480x853 = viel zu schwer fürs CPU-SLAM.
+    const vw = video.videoWidth, vh = video.videoHeight, LONG = 400;
+    let W, H;
+    if (vw >= vh) { W = LONG; H = Math.round(LONG * vh / vw); }
+    else          { H = LONG; W = Math.round(LONG * vw / vh); }
     const canvas = document.createElement('canvas');
     canvas.width = W; canvas.height = H;
     const ctx  = canvas.getContext('2d', { alpha: false, desynchronized: true });
@@ -1146,7 +1151,7 @@ async function startAlvaAR() {
     window._alva = alva;
     dbg('AlvaAR: SLAM aktiv ' + W + 'x' + H);
 
-    let last = 0;
+    let last = 0, frames = 0, tracked = 0, statT = 0;
     const loop = (t) => {
       if (!alvaActive) return;
       requestAnimationFrame(loop);
@@ -1157,8 +1162,19 @@ async function startAlvaAR() {
         ctx.drawImage(video, 0, 0, W, H);
         const frame = ctx.getImageData(0, 0, W, H);
         const pose  = alva.findCameraPose(frame);
-        if (pose) { applyPose(pose, camO.quaternion, camO.position); window._alvaLost = false; }
+        frames++;
+        if (pose) { applyPose(pose, camO.quaternion, camO.position); window._alvaLost = false; tracked++; }
         else      { window._alvaLost = true; }
+        // Status: bei Verlust Hinweis „Handy bewegen", sonst Tracking-Rate
+        const ds = document.getElementById('detect-status');
+        if (ds && !placeModeActive && !calibMode) {
+          ds.style.display = 'block';
+          if (window._alvaLost) { ds.textContent = 'Tracking sucht… Handy langsam seitlich bewegen'; ds.style.background = 'rgba(210,120,40,0.92)'; }
+          else { ds.textContent = 'Tracking aktiv'; ds.style.background = 'rgba(0,170,90,0.92)'; }
+        }
+        if (t - statT > 2000) { statT = t;
+          window.vlog && window.vlog('alva', { fps: Math.round(frames/2), trackPct: Math.round(100*tracked/Math.max(1,frames)) });
+          frames = 0; tracked = 0; }
       } catch (e) {
         if (!window._alvaErr) { window._alvaErr = true; dbg('AlvaAR loop err: ' + (e && e.message)); }
       }
