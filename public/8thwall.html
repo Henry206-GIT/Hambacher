@@ -14,7 +14,7 @@
 
   <script>
   /* ════════ Konfiguration ════════ */
-  const APP_VERSION   = 'w5 · absolute-scale';
+  const APP_VERSION   = 'w6 · label-fix';
   const EXHIBITION_ID = '1';
   const HAND_W        = 0.25;                // Meter (absolute Skalierung = wie Android)
   const PLACE_MIN = 0.5, PLACE_MAX = 4.0;     // Reticle-Distanz in Metern
@@ -174,8 +174,9 @@
     label.setAttribute('billboard', '');
     const lblName = document.createElement('a-text');
     lblName.setAttribute('value', fp.name || ''); lblName.setAttribute('align', 'center');
-    lblName.setAttribute('color', col); lblName.setAttribute('width', Math.max(8, (fp.name||'').length*0.9));
-    lblName.setAttribute('wrap-count', 18);
+    lblName.setAttribute('color', col);
+    lblName.setAttribute('width', Math.min(1.0, 0.3 + (fp.name||'').length*0.03));  // Meter
+    lblName.setAttribute('wrap-count', 20);
     label.appendChild(lblName);
     wrap.appendChild(label);
 
