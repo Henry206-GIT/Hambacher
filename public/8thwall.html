@@ -14,10 +14,10 @@
 
   <script>
   /* ════════ Konfiguration ════════ */
-  const APP_VERSION   = 'w4 · imu+recenter';
+  const APP_VERSION   = 'w5 · absolute-scale';
   const EXHIBITION_ID = '1';
-  const HAND_W        = 3.5;                 // Abdruck-Breite in 8th-Wall-Einheiten (~0,2 m/Einheit)
-  const PLACE_MIN = 3, PLACE_MAX = 14;       // Reticle-Distanz klemmen (nicht zu weit/nah)
+  const HAND_W        = 0.25;                // Meter (absolute Skalierung = wie Android)
+  const PLACE_MIN = 0.5, PLACE_MAX = 4.0;     // Reticle-Distanz in Metern
   const COLORS = ['#00cfff','#ff3dac','#39ff14','#ff6b00','#bf00ff','#ffec00','#ff2244','#00ffcc','#ff9500','#ffffff'];
   let   selectedColor = COLORS[0];
   const rendered = new Set();
@@ -125,7 +125,7 @@
         if (this._fwd.lengthSq() < 1e-4) this._fwd.set(0,0,-1); else this._fwd.normalize();
         let d = ok ? this._cp.distanceTo(pt) : Infinity;
         if (!ok || d > PLACE_MAX || pt.y > this._cp.y) {
-          pt.copy(this._cp).addScaledVector(this._fwd, 8); pt.y = 0; d = 8;
+          pt.copy(this._cp).addScaledVector(this._fwd, 1.5); pt.y = 0; d = 1.5;
         } else if (d < PLACE_MIN) {
           pt.copy(this._cp).addScaledVector(this._fwd, PLACE_MIN); pt.y = 0;
         }
@@ -259,9 +259,9 @@
   xrextras-runtime-error
   reticle-follow
   renderer="colorManagement: true; alpha: true"
-  xrweb="allowedDevices: any">
+  xrweb="allowedDevices: any; scale: absolute">
 
-  <a-camera id="camera" position="0 8 0"
+  <a-camera id="camera" position="0 1.6 0"
     raycaster="objects: .fp-plane; far: 100"
     cursor="fuse: false; rayOrigin: mouse"></a-camera>
 
@@ -271,7 +271,7 @@
 
   <!-- Vorschau-Hand (Holo-Stil) -->
   <a-entity id="reticle" visible="false">
-    <a-plane id="reticle-hand" width="3.5" height="4.43" rotation="-90 0 0"
+    <a-plane id="reticle-hand" width="0.25" height="0.316" rotation="-90 0 0"
              position="0 0.02 0" holo-mat="color: #00ffcc"></a-plane>
   </a-entity>
 
