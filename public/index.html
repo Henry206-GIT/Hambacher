@@ -220,102 +220,63 @@
       } catch (e) { dl('ar-hit-test._setup FAIL:', e && (e.name + ' ' + e.message)); }
     },
     tick: function () {
-      if (!this.hitTestSource) return;
-      // try/catch: ein throw im tick würde sonst den ganzen Render-Loop killen Freeze
+      // try/catch: ein throw hier würde den Render-Loop killen (Freeze)
       try {
-        const xr     = this.el.sceneEl.renderer.xr;
-        const frame  = xr.getFrame?.();
-        if (!frame) return;
-        const ref     = xr.getReferenceSpace();
-
-        const results = frame.getHitTestResults(this.hitTestSource);
         const reticle = document.getElementById('reticle');
         if (!reticle) return;
-        // Vorschau-Hand zeigen während Platzierung ODER Kalibrierung.
-        // placeModeActive/calibMode sind globale let aus dem Body-Script
-        // (geteilte Lexical-Umgebung); Zugriff steht sicher im try/catch.
         const placing = ((typeof placeModeActive !== 'undefined') && placeModeActive)
                      || ((typeof calibMode      !== 'undefined') && calibMode);
         this._vf = (this._vf || 0) + 1;
-        const verbose = placing && window.vlog && (this._vf % 20 === 0); // ~3x/s im Place/Calib
-        if (results.length) {
-          const pose = results[0].getPose(ref);
-          if (pose) {
-            this.lastPose   = pose;
-            this.lastResult = results[0];
-            this._fallback  = false;
-            const p = pose.transform.position;
-            const o = pose.transform.orientation;
-            reticle.object3D.position.set(p.x, p.y + 0.002, p.z);
-            reticle.object3D.quaternion.set(o.x, o.y, o.z, o.w);
-            reticle.setAttribute('visible', placing);
-            if (verbose) {
-              const n = window.normalOf(o.x, o.y, o.z, o.w);
-              window.vlog('hit', {
-                cnt: results.length, surf: window.classifyNormal(n),
-                pos: [p.x, p.y, p.z], quat: [o.x, o.y, o.z, o.w],
-                normal: [n.x, n.y, n.z], placeMode: !!placeModeActive, calib: !!calibMode
-              });
+        const verbose = placing && window.vlog && (this._vf % 20 === 0);
+        let detected = false;
+
+        if (this.hitTestSource) {
+          // ── WebXR-Modus: echter Hit-Test ──
+          const xr    = this.el.sceneEl.renderer.xr;
+          const frame = xr.getFrame && xr.getFrame();
+          if (frame) {
+            const ref     = xr.getReferenceSpace();
+            const results = frame.getHitTestResults(this.hitTestSource);
+            if (results.length) {
+              const pose = results[0].getPose(ref);
+              if (pose) {
+                this.lastPose = pose; this.lastResult = results[0]; this._fallback = false;
+                const p = pose.transform.position, o = pose.transform.orientation;
+                reticle.object3D.position.set(p.x, p.y + 0.002, p.z);
+                reticle.object3D.quaternion.set(o.x, o.y, o.z, o.w);
+                reticle.setAttribute('visible', placing);
+                detected = true;
+                if (verbose) { const n = window.normalOf(o.x, o.y, o.z, o.w);
+                  window.vlog('hit', { cnt: results.length, surf: window.classifyNormal(n),
+                    pos: [p.x, p.y, p.z], normal: [n.x, n.y, n.z],
+                    placeMode: !!placeModeActive, calib: !!calibMode }); }
+              }
+            } else if (placing) {
+              this._fallbackReticle(reticle, frame, ref, verbose);
+            } else {
+              reticle.setAttribute('visible', false); this._fallback = false;
             }
           }
         } else if (placing) {
-          // Kein Plane-Hit Depth-Sensing nutzen (echte Distanz zur Wand,
-          // auch untexturiert). Fällt auf festen Abstand zurück, wenn keine
-          // Tiefe verfügbar. Orientierung aus Blickrichtung geschätzt.
-          const camO = document.getElementById('cam3d').object3D;
-          camO.updateMatrixWorld();
-          const camPos = new THREE.Vector3(); camO.getWorldPosition(camPos);
-          const camQ   = new THREE.Quaternion(); camO.getWorldQuaternion(camQ);
-          const fwd    = new THREE.Vector3(0, 0, -1).applyQuaternion(camQ);
-
-          // Tiefe am Bildmittelpunkt holen
-          let dist = 1.2, depthOk = false;
-          try {
-            const vp = frame.getViewerPose(ref);
-            const view = vp && vp.views[0];
-            const di = view && frame.getDepthInformation && frame.getDepthInformation(view);
-            if (di) {
-              const d = di.getDepthInMeters(0.5, 0.5);
-              if (isFinite(d) && d > 0.2 && d < 8) { dist = d; depthOk = true; }
-            }
-          } catch (_) {}
-
-          const target = camPos.clone().addScaledVector(fwd, dist);
-          const normal = (Math.abs(fwd.y) < 0.45)
-            ? new THREE.Vector3(-fwd.x, 0, -fwd.z).normalize()   // Wand
-            : new THREE.Vector3(0, 1, 0);                         // Boden
-          const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
-          reticle.object3D.position.copy(target);
-          reticle.object3D.quaternion.copy(quat);
-          reticle.setAttribute('visible', true);
-          this.lastPose = { transform: {
-            position:    { x: target.x, y: target.y, z: target.z },
-            orientation: { x: quat.x, y: quat.y, z: quat.z, w: quat.w },
-          }};
-          this.lastResult = null;
-          this._fallback   = true;
-          this._depthOk    = depthOk;
-          if (verbose) window.vlog('hit', { cnt: 0, fallback: true, depth: depthOk, dist: dist, surf: window.classifyNormal(normal) });
+          // ── Gyro-/Normal-Modus (kein WebXR): festes Reticle vor der Kamera ──
+          this._fallbackReticle(reticle, null, null, verbose);
         } else {
-          reticle.setAttribute('visible', false);
-          this._fallback = false;
+          reticle.setAttribute('visible', false); this._fallback = false;
         }
 
-        // Live-Erkennungsstatus + Hinweise wenn keine Fläche erkannt wird
+        // Live-Erkennungsstatus
         const ds = document.getElementById('detect-status');
         if (ds) {
           if (placing) {
-            const has = results.length > 0;
-            if (this._vf % 10 === 0 || has !== this._lastHas) {
-              this._lastHas = has;
+            if (this._vf % 10 === 0 || detected !== this._lastHas) {
+              this._lastHas = detected;
               ds.style.display = 'block';
-              if (has) {
+              if (detected) {
                 ds.textContent = 'Fläche erkannt – jetzt verankern/platzieren';
                 ds.style.background = 'rgba(0,170,90,0.92)';
               } else {
-                // Fallback aktiv Platzieren trotzdem möglich (Schätzposition)
                 const tips = [
-                  'Keine echte Fläche – Schätzposition (Platzieren geht trotzdem)',
+                  'Schätzposition – verankern/platzieren geht trotzdem',
                   'für echte Wand: auf Struktur zielen (Kante, Poster, Muster)',
                   'Handy langsam hin- und herschwenken',
                   'Abstand 0,5–2 m halten · mehr Licht',
@@ -331,10 +292,44 @@
         }
       } catch (e) {
         if (!this._loggedTickErr) {
-          this._loggedTickErr = true;   // nur einmal loggen, nicht pro Frame
+          this._loggedTickErr = true;
           (window.dbg || function () {})('ar-hit-test.tick ERROR:', e && (e.name + ' ' + e.message));
         }
       }
+    },
+    // Reticle an festem Abstand vor der Kamera (Gyro-Modus oder kein Plane-Hit).
+    // Mit frame: versucht echte Tiefe (Depth-Sensing); ohne frame: fester Abstand.
+    _fallbackReticle: function (reticle, frame, ref, verbose) {
+      const camO = document.getElementById('cam3d').object3D;
+      camO.updateMatrixWorld();
+      const camPos = new THREE.Vector3(); camO.getWorldPosition(camPos);
+      const camQ   = new THREE.Quaternion(); camO.getWorldQuaternion(camQ);
+      const fwd    = new THREE.Vector3(0, 0, -1).applyQuaternion(camQ);
+      let dist = 1.2, depthOk = false;
+      if (frame) {
+        try {
+          const vp = frame.getViewerPose(ref);
+          const view = vp && vp.views[0];
+          const di = view && frame.getDepthInformation && frame.getDepthInformation(view);
+          if (di) { const d = di.getDepthInMeters(0.5, 0.5);
+            if (isFinite(d) && d > 0.2 && d < 8) { dist = d; depthOk = true; } }
+        } catch (_) {}
+      }
+      const target = camPos.clone().addScaledVector(fwd, dist);
+      const normal = (Math.abs(fwd.y) < 0.45)
+        ? new THREE.Vector3(-fwd.x, 0, -fwd.z).normalize()
+        : new THREE.Vector3(0, 1, 0);
+      const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
+      reticle.object3D.position.copy(target);
+      reticle.object3D.quaternion.copy(quat);
+      reticle.setAttribute('visible', true);
+      this.lastPose = { transform: {
+        position:    { x: target.x, y: target.y, z: target.z },
+        orientation: { x: quat.x, y: quat.y, z: quat.z, w: quat.w },
+      }};
+      this.lastResult = null; this._fallback = true;
+      if (verbose) window.vlog('hit', { cnt: 0, fallback: true, depth: depthOk,
+        gyro: !frame, dist: dist, surf: window.classifyNormal(normal) });
     },
   });
   </script>
@@ -756,7 +751,7 @@
 
 <script>
 /* ─── Konfiguration ─── */
-const APP_VERSION   = 'p22 · no-emoji';   // bei jedem Patch hochzählen
+const APP_VERSION   = 'p23 · gyro-calib';   // bei jedem Patch hochzählen
 const EXHIBITION_ID = '1';
 const COLORS = [
   '#00cfff','#ff3dac','#39ff14','#ff6b00',
@@ -1131,11 +1126,13 @@ async function init() {
     document.querySelector('.ar-stage').addEventListener('click', async () => {
       await DeviceOrientationEvent.requestPermission().catch(() => {});
       modeBadge.textContent = 'iOS Gyro';
+      document.getElementById('calib-btn').style.display = 'flex';   // Kalibrieren im Gyro-Modus
     }, { once: true });
 
   } else {
     modeBadge.textContent = 'Gyro-Modus';
     startFallbackCamera();
+    document.getElementById('calib-btn').style.display = 'flex';     // Kalibrieren im Gyro-Modus
   }
 }
 
@@ -1424,25 +1421,13 @@ function updatePreviewHand(col, sz) {
 /* ─── Platzieren-Button: Hand an aktueller Vorschau-Position lassen ─── */
 document.getElementById('place-confirm').onclick = () => {
   if (!placeModeActive || !pendingFp) return;
-  // A-Frame nutzt im AR den State 'ar-mode' (nicht 'vr-mode') beide prüfen,
-  // sonst landet jede AR-Platzierung fälschlich im Gyro-Fallback (Boden).
-  const inVR = !!(sceneEl.is && (sceneEl.is('ar-mode') || sceneEl.is('vr-mode')));
-  if (inVR) {
-    const pose = sceneEl.components['fp-hit-test']?.lastPose;
-    dbg('confirm-btn: inVR, hatPose=', !!pose);
-    if (!pose) { dbg('  keine Fläche erkannt, bewege das Handy'); return; }
-    const p = pose.transform.position, o = pose.transform.orientation;
-    confirmPlacement(p.x, p.y, p.z, o.x, o.y, o.z, o.w);
-  } else {
-    // Gyro-Fallback (kein Hit-Test): 2m vor der Kamera auf Bodenhöhe
-    dbg('confirm-btn: gyro-fallback');
-    const cam = document.getElementById('cam3d');
-    if (!cam) return;
-    const pos = cam.object3D.position;
-    const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.object3D.quaternion);
-    dir.y = 0; dir.normalize();
-    confirmPlacement(pos.x + dir.x * 2, 0, pos.z + dir.z * 2, 0, 0, 0, 1);
-  }
+  // lastPose kommt vom Reticle — im WebXR aus dem Hit-Test, im Gyro-Modus aus
+  // dem Fallback (Kamera-Richtung). Gilt also für beide Modi.
+  const pose = sceneEl.components['fp-hit-test']?.lastPose;
+  dbg('confirm-btn: hatPose=', !!pose);
+  if (!pose) { dbg('  keine Pose – Handy bewegen'); return; }
+  const p = pose.transform.position, o = pose.transform.orientation;
+  confirmPlacement(p.x, p.y, p.z, o.x, o.y, o.z, o.w);
 };
 
 // Abbrechen
