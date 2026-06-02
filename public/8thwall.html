@@ -14,7 +14,7 @@
 
   <script>
   /* ════════ Konfiguration ════════ */
-  const APP_VERSION   = 'w3 · holo-style';
+  const APP_VERSION   = 'w4 · imu+recenter';
   const EXHIBITION_ID = '1';
   const HAND_W        = 3.5;                 // Abdruck-Breite in 8th-Wall-Einheiten (~0,2 m/Einheit)
   const PLACE_MIN = 3, PLACE_MAX = 14;       // Reticle-Distanz klemmen (nicht zu weit/nah)
@@ -199,9 +199,11 @@
     #toast { position:absolute; top:54px; left:50%; transform:translateX(-50%);
       background:rgba(0,180,120,0.92); color:#fff; padding:8px 20px; border-radius:18px; font-size:14px;
       opacity:0; transition:opacity .3s; pointer-events:none; white-space:nowrap; }
-    #calib-btn { position:absolute; bottom:12px; right:12px; pointer-events:auto;
+    #calib-btn, #recenter-btn { position:absolute; bottom:12px; pointer-events:auto;
       background:rgba(0,10,30,0.75); border:1px solid rgba(0,200,255,0.25); border-radius:10px;
       padding:6px 12px; font-size:12px; color:#7af; }
+    #calib-btn { right:12px; }
+    #recenter-btn { left:12px; }
 
     #sheet { position:fixed; left:0; right:0; bottom:0; z-index:200; pointer-events:auto;
       background:rgba(4,6,24,0.97); backdrop-filter:blur(20px); border-radius:20px 20px 0 0;
@@ -291,6 +293,7 @@
   <div class="ar-stage">
     <div id="status" style="display:none"></div>
     <div id="toast"></div>
+    <button id="recenter-btn" style="display:none">Neu zentrieren</button>
     <button id="calib-btn" style="display:none">Kalibrieren</button>
   </div>
 
@@ -403,6 +406,24 @@ function startCalibration(){ calibMode=true; placeModeActive=false;
 function endCalibration(){ calibMode=false; document.getElementById('calib-overlay').style.display='none'; }
 
 document.getElementById('calib-btn').onclick = startCalibration;
+
+/* Neu zentrieren: setzt den Welt-Ursprung auf die aktuelle Geräteposition
+   (gegen aufgelaufenen SLAM-Drift). */
+document.getElementById('recenter-btn').onclick = () => {
+  try { if (window.XR8 && XR8.XrController && XR8.XrController.recenter) { XR8.XrController.recenter(); dbg('recenter()'); toast('Neu zentriert'); } }
+  catch(e){ dbg('recenter err:', e&&e.message); }
+};
+
+/* iOS: Bewegungssensor (IMU) freigeben — ohne IMU trackt 8th Wall nur per
+   Kamera und driftet stark. Muss in einer User-Geste passieren. */
+function requestMotionPerm(){
+  try { if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function')
+    DeviceMotionEvent.requestPermission().then(s => dbg('motion-perm:', s)).catch(()=>{}); } catch(_){}
+  try { if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function')
+    DeviceOrientationEvent.requestPermission().catch(()=>{}); } catch(_){}
+}
+document.addEventListener('touchend', requestMotionPerm, { once: true });
+document.addEventListener('click',    requestMotionPerm, { once: true });
 document.getElementById('calib-confirm').onclick = () => {
   const pt=reticlePoint(); if(!pt){ dbg('calib: kein Punkt'); return; }
   setAnchor(pt.x, pt.z); endCalibration(); toast('Verankert'); loadFootprints();
@@ -464,10 +485,11 @@ async function loadFootprints(){
 /* ── Start, wenn Tracking läuft ── */
 sceneEl.addEventListener('realityready', () => {
   dbg('realityready (Tracking läuft)');
-  setStatus('Tracking aktiv – Sheet öffnen & Abdruck setzen', true);
+  setStatus('Tracking aktiv. Langsam bewegen. Driftet? Neu zentrieren.', true);
   document.getElementById('calib-btn').style.display='block';
+  document.getElementById('recenter-btn').style.display='block';
   loadFootprints(); setInterval(loadFootprints, 7000);
-  setTimeout(()=>setStatus(''), 4000);
+  setTimeout(()=>setStatus(''), 5000);
 });
 sceneEl.addEventListener('realityerror', e => { dbg('realityerror:', e&&e.message); setStatus('AR-Fehler – Seite neu laden', false); });
 </script>
