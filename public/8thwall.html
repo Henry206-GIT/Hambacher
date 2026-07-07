@@ -14,13 +14,16 @@
 
   <script>
   /* ════════ Konfiguration ════════ */
-  const APP_VERSION   = 'w6 · label-fix';
+  const APP_VERSION   = 'w7 · stage1-quickwins';
   const EXHIBITION_ID = '1';
   const HAND_W        = 0.25;                // Meter (absolute Skalierung = wie Android)
   const PLACE_MIN = 0.5, PLACE_MAX = 4.0;     // Reticle-Distanz in Metern
   const COLORS = ['#00cfff','#ff3dac','#39ff14','#ff6b00','#bf00ff','#ffec00','#ff2244','#00ffcc','#ff9500','#ffffff'];
   let   selectedColor = COLORS[0];
   const rendered = new Set();
+  let firstLoadDone = false;   // Spawn-Welle erst nach Erst-Load
+  const HAND_TEX = new Map();
+  function handTexture(col){ if(!HAND_TEX.has(col)) HAND_TEX.set(col, new THREE.CanvasTexture(makeHandCanvas(col))); return HAND_TEX.get(col); }
 
   /* ════════ Debug-Log ════════ */
   function dbg(...a){
@@ -78,7 +81,8 @@
       this._apply(); this.el.addEventListener('object3dset', () => this._apply());
     },
     _apply(){ const m=this.el.getObject3D('mesh'); if(m) m.traverse(c=>{ if(c.isMesh) c.material=this.mat; }); },
-    setTexture(canvas){ const t=new THREE.CanvasTexture(canvas); t.needsUpdate=true; this.uniforms.footTex.value=t; },
+    setTexture(canvasOrTex){ const t=canvasOrTex.isTexture?canvasOrTex:new THREE.CanvasTexture(canvasOrTex);
+      t.needsUpdate=true; this.uniforms.footTex.value=t; },
     update(){ this.uniforms.glowColor.value.set(this.data.color); },
     tick(t){ this.uniforms.time.value=t/1000; },
   });
@@ -94,9 +98,12 @@
       this.mat.opacity=0.35+Math.sin(f*2.6+1.0)*0.35; },
   });
   AFRAME.registerComponent('billboard', {
-    init(){ this._v=new THREE.Vector3(); },
+    init(){ this._v=new THREE.Vector3(); this._p=new THREE.Vector3(); },
     tick(){ try{ const cam=document.getElementById('camera'); if(!cam) return;
-      cam.object3D.getWorldPosition(this._v); this.el.object3D.lookAt(this._v); }
+      cam.object3D.getWorldPosition(this._v); this.el.object3D.lookAt(this._v);
+      // Label-Fade: ab 4 m Distanz ausblenden
+      this.el.object3D.getWorldPosition(this._p);
+      this.el.object3D.visible = this._v.distanceTo(this._p) < 4; }
       catch(e){ if(!this._err){ this._err=true; dbg('billboard:', e&&e.message); } } },
   });
 
@@ -152,7 +159,7 @@
     plane.setAttribute('rotation', '-90 0 0'); plane.setAttribute('position', '0 0.01 0');
     plane.setAttribute('class', 'fp-plane');
     plane.setAttribute('holo-mat', `color: ${col}`);
-    plane.addEventListener('loaded', () => { const c=plane.components['holo-mat']; if(c) c.setTexture(makeHandCanvas(col)); });
+    plane.addEventListener('loaded', () => { const c=plane.components['holo-mat']; if(c) c.setTexture(handTexture(col)); });
     plane.addEventListener('click', () => { if(!placeModeActive && !calibMode && !popupOpen) showPopup(fp); });
     wrap.appendChild(plane);
 
@@ -179,6 +186,20 @@
     lblName.setAttribute('wrap-count', 20);
     label.appendChild(lblName);
     wrap.appendChild(label);
+
+    // Spawn-Welle (nur für neu erscheinende Abdrücke, nicht beim Erst-Load)
+    if (firstLoadDone) {
+      const wave = document.createElement('a-entity');
+      const wt = document.createElement('a-torus');
+      wt.setAttribute('radius', 0.19); wt.setAttribute('radius-tubular', 0.005);
+      wt.setAttribute('rotation', '-90 0 0');
+      wt.setAttribute('material', `color: ${col}; transparent: true; opacity: 0.8; blending: additive; depthWrite: false`);
+      wt.setAttribute('animation__o', 'property: material.opacity; from: 0.8; to: 0; dur: 650; easing: linear');
+      wave.appendChild(wt);
+      wave.setAttribute('animation__s', 'property: scale; from: 0.2 0.2 0.2; to: 3 3 3; dur: 650; easing: easeOutQuad');
+      wrap.appendChild(wave);
+      setTimeout(() => { try { wrap.removeChild(wave); } catch (_) {} }, 800);
+    }
 
     document.getElementById('fp-root').appendChild(wrap);
   }
@@ -396,7 +417,7 @@ function setReticleHand(col){
   const p=document.getElementById('reticle-hand');
   p.setAttribute('holo-mat', `color: ${col}`);
   const c=p.components && p.components['holo-mat'];
-  if (c) c.setTexture(makeHandCanvas(col));
+  if (c) c.setTexture(handTexture(col));
 }
 
 /* ── Kalibrierung ── */
@@ -478,9 +499,35 @@ async function loadFootprints(){
   try {
     const data=await fetch(`/api/footprints/${EXHIBITION_ID}`).then(r=>r.json());
     data.forEach(d => spawnFootprint({ id:d.id, name:d.name, message:d.message, color:d.color, x:d.x, z:d.z }));
+    firstLoadDone = true;
     document.getElementById('count').textContent=data.length;
     document.getElementById('peek-count').textContent=`${data.length} Abdrücke`;
   } catch(e){ dbg('load err:', e&&e.message); }
+}
+
+/* ── Tracking-Status überwachen (LIMITED = Verlust-Hinweis statt stillem Drift) ── */
+function installTrackMonitor(){
+  try {
+    if (!window.XR8 || !XR8.addCameraPipelineModule) { dbg('track-monitor: XR8 fehlt'); return; }
+    XR8.addCameraPipelineModule({
+      name: 'track-monitor',
+      onUpdate: ({ processCpuResult }) => {
+        const r = processCpuResult && processCpuResult.reality;
+        if (!r || !r.trackingStatus) return;
+        if (r.trackingStatus !== window._lastTrack) {
+          window._lastTrack = r.trackingStatus;
+          dbg('trackingStatus:', r.trackingStatus, r.trackingReason || '');
+          if (r.trackingStatus === 'LIMITED') {
+            setStatus('Tracking eingeschränkt – langsam bewegen, mehr Licht', false);
+          } else if (r.trackingStatus === 'NORMAL') {
+            setStatus('Tracking stabil', true);
+            setTimeout(() => setStatus(''), 1500);
+          }
+        }
+      },
+    });
+    dbg('track-monitor installiert');
+  } catch (e) { dbg('track-monitor err:', e && e.message); }
 }
 
 /* ── Start, wenn Tracking läuft ── */
@@ -489,6 +536,7 @@ sceneEl.addEventListener('realityready', () => {
   setStatus('Tracking aktiv. Langsam bewegen. Driftet? Neu zentrieren.', true);
   document.getElementById('calib-btn').style.display='block';
   document.getElementById('recenter-btn').style.display='block';
+  installTrackMonitor();
   loadFootprints(); setInterval(loadFootprints, 7000);
   setTimeout(()=>setStatus(''), 5000);
 });

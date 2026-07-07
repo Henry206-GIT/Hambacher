@@ -117,8 +117,9 @@
       const mesh = this.el.getObject3D('mesh');
       if (mesh) mesh.traverse(c => { if (c.isMesh) c.material = this.mat; });
     },
-    setTexture: function (canvas) {
-      const t = new THREE.CanvasTexture(canvas);
+    setTexture: function (canvasOrTex) {
+      // akzeptiert Canvas ODER fertige THREE.Texture (Farb-Cache)
+      const t = canvasOrTex.isTexture ? canvasOrTex : new THREE.CanvasTexture(canvasOrTex);
       t.needsUpdate = true;
       this.uniforms.footTex.value = t;
     },
@@ -163,13 +164,16 @@
      Element schaut immer zur Kamera.
   ════════════════════════════════════════════════ */
   AFRAME.registerComponent('billboard', {
-    init: function () { this._v = new THREE.Vector3(); },
+    init: function () { this._v = new THREE.Vector3(); this._p = new THREE.Vector3(); },
     tick: function () {
       try {
         const cam = document.getElementById('cam3d');
         if (!cam) return;
         cam.object3D.getWorldPosition(this._v);
         this.el.object3D.lookAt(this._v);
+        // Label-Fade: ab 4 m Distanz ausblenden (verhindert Label-Salat)
+        this.el.object3D.getWorldPosition(this._p);
+        this.el.object3D.visible = this._v.distanceTo(this._p) < 4;
       } catch (e) {
         if (!this._err) { this._err = true;
           (window.dbg || function(){})('billboard.tick:', e && (e.name + ' ' + e.message)); }
@@ -782,7 +786,7 @@
 
 <script>
 /* ─── Konfiguration ─── */
-const APP_VERSION   = 'p31 · ios-only-8thwall';   // bei jedem Patch hochzählen
+const APP_VERSION   = 'p32 · stage1-quickwins';   // bei jedem Patch hochzählen
 const EXHIBITION_ID = '1';
 const COLORS = [
   '#00cfff','#ff3dac','#39ff14','#ff6b00',
@@ -791,6 +795,7 @@ const COLORS = [
 ];
 let selectedColor = COLORS[0];
 const renderedIds  = new Set();
+let firstLoadDone  = false;   // Spawn-Welle erst nach Erst-Load zeigen
 const sceneEl      = document.querySelector('a-scene');
 const HAND_W       = 0.25;   // Abdruck-Breite in m (realistisch, nicht riesig)
 
@@ -831,6 +836,13 @@ function makeHandCanvas(baseColor) {
 
   drawOneHand(ctx, W/2, H * 0.58, 95, baseColor);
   return cv;
+}
+
+/* Textur-Cache: nur 10 Farben → eine Textur pro Farbe statt pro Abdruck */
+const HAND_TEX = new Map();
+function handTexture(col) {
+  if (!HAND_TEX.has(col)) HAND_TEX.set(col, new THREE.CanvasTexture(makeHandCanvas(col)));
+  return HAND_TEX.get(col);
 }
 
 function hexAlpha(hex, a) {
@@ -935,7 +947,7 @@ function spawnHandprint(fp) {
 
   plane.addEventListener('loaded', () => {
     const comp = plane.components['holo-mat'];
-    if (comp) comp.setTexture(makeHandCanvas(col));
+    if (comp) comp.setTexture(handTexture(col));
   });
   plane.addEventListener('click', () => {
     // nicht während Platzieren/Kalibrieren und nicht wenn schon ein Popup offen ist
@@ -995,6 +1007,23 @@ function spawnHandprint(fp) {
   labelWrap.appendChild(lblName);
 
   wrap.appendChild(labelWrap);
+
+  // Spawn-Welle (nur für neu erscheinende Abdrücke, nicht beim Erst-Load)
+  if (firstLoadDone) {
+    const wave = document.createElement('a-entity');
+    const wt = document.createElement('a-torus');
+    wt.setAttribute('radius', 0.19 * sz);
+    wt.setAttribute('radius-tubular', 0.005);
+    wt.setAttribute('rotation', '-90 0 0');
+    wt.setAttribute('material',
+      `color: ${col}; transparent: true; opacity: 0.8; blending: additive; depthWrite: false`);
+    wt.setAttribute('animation__o', 'property: material.opacity; from: 0.8; to: 0; dur: 650; easing: linear');
+    wave.appendChild(wt);
+    wave.setAttribute('animation__s', 'property: scale; from: 0.2 0.2 0.2; to: 3 3 3; dur: 650; easing: easeOutQuad');
+    wrap.appendChild(wave);
+    setTimeout(() => { try { wrap.removeChild(wave); } catch (_) {} }, 800);
+  }
+
   document.getElementById('fp-root').appendChild(wrap);
 }
 
@@ -1022,6 +1051,7 @@ async function loadFootprints() {
         anchorPos: [root.position.x, root.position.y, root.position.z] });
     }
     data.forEach(spawnHandprint);
+    firstLoadDone = true;
     document.getElementById('badge').textContent = `${data.length} Handabdrücke`;
     const sc = document.getElementById('sheet-peek-count');
     if (sc) sc.textContent = `${data.length} Abdrücke`;
@@ -1473,7 +1503,7 @@ function updatePreviewHand(col, sz) {
   plane.setAttribute('holo-mat', 'color: ' + col);
   plane.setAttribute('scale', `${sz} ${sz} ${sz}`);
   const comp = plane.components['holo-mat'];
-  if (comp) comp.setTexture(makeHandCanvas(col));
+  if (comp) comp.setTexture(handTexture(col));
 }
 
 /* ─── Platzieren-Button: Hand an aktueller Vorschau-Position lassen ─── */
