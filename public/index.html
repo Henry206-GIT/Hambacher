@@ -247,6 +247,12 @@
       const dl = window.dbg || function () {};
       const session = this.el.sceneEl.renderer.xr.getSession();
       if (!session) { dl('ar-hit-test._setup: keine Session'); return; }
+      // Depth-Diagnose: was hat die Session wirklich aktiviert?
+      try {
+        dl('depth-diag: enabledFeatures=', JSON.stringify(session.enabledFeatures || null),
+           ' depthUsage=', session.depthUsage || 'n/a',
+           ' depthDataFormat=', session.depthDataFormat || 'n/a');
+      } catch (e) { dl('depth-diag err:', e && e.message); }
       try {
         const vs = await session.requestReferenceSpace('viewer');
         this.hitTestSource = await session.requestHitTestSource({ space: vs });
@@ -291,6 +297,7 @@
             } else {
               reticle.setAttribute('visible', false); this._fallback = false;
             }
+            this._updatePrintAnchors(frame, ref);
           }
         } else if (placing) {
           // ── Gyro-/Normal-Modus (kein WebXR): festes Reticle vor der Kamera ──
@@ -332,6 +339,41 @@
         }
       }
     },
+    // per-Print-XRAnchors: ARCore korrigiert die Anchor-Pose pro Frame -> 
+    // frisch platzierte Abdrücke kleben drift-frei am realen Ort. Die Entity
+    // bleibt Kind von #fp-root (Kalibrieren funktioniert weiter): Welt-Pose
+    // des Anchors wird in fp-root-lokale Koordinaten umgerechnet.
+    _updatePrintAnchors: function (frame, ref) {
+      const reg = window._printAnchors;
+      if (!reg || !reg.length) return;
+      if (!this._paM) { this._paM = new THREE.Matrix4(); this._paP = new THREE.Vector3();
+        this._paQ = new THREE.Quaternion(); this._paS = new THREE.Vector3(); }
+      const root = document.getElementById('fp-root').object3D;
+      root.updateMatrixWorld(true);
+      const inv = this._paM.copy(root.matrixWorld).invert();
+      for (const entry of reg) {
+        try {
+          if (!entry.el) {
+            entry.el = document.querySelector(`[data-fp-id="${entry.fpId}"]`);
+            if (!entry.el) continue;   // Entity evtl. noch nicht gespawnt
+          }
+          const pose = frame.getPose(entry.anchor.anchorSpace, ref);
+          if (!pose) continue;
+          const t = pose.transform;
+          const world = new THREE.Matrix4().compose(
+            this._paP.set(t.position.x, t.position.y, t.position.z),
+            this._paQ.set(t.orientation.x, t.orientation.y, t.orientation.z, t.orientation.w),
+            this._paS.set(1, 1, 1));
+          const local = world.premultiply(inv);
+          local.decompose(this._paP, this._paQ, this._paS);
+          entry.el.object3D.position.copy(this._paP);
+          entry.el.object3D.quaternion.copy(this._paQ);
+        } catch (e) {
+          if (!this._paErr) { this._paErr = true;
+            (window.dbg || function(){})('printAnchor tick err:', e && e.message); }
+        }
+      }
+    },
     // Reticle an festem Abstand vor der Kamera (Gyro-Modus oder kein Plane-Hit).
     // Mit frame: versucht echte Tiefe (Depth-Sensing); ohne frame: fester Abstand.
     _fallbackReticle: function (reticle, frame, ref, verbose) {
@@ -345,10 +387,21 @@
         try {
           const vp = frame.getViewerPose(ref);
           const view = vp && vp.views[0];
+          if (!frame.getDepthInformation && !this._depthApiLogged) {
+            this._depthApiLogged = true;
+            (window.dbg || function(){})('depth-diag: frame.getDepthInformation FEHLT (API nicht verfügbar)');
+          }
           const di = view && frame.getDepthInformation && frame.getDepthInformation(view);
           if (di) { const d = di.getDepthInMeters(0.5, 0.5);
             if (isFinite(d) && d > 0.2 && d < 8) { dist = d; depthOk = true; } }
-        } catch (_) {}
+          else if (view && frame.getDepthInformation && !this._depthNullLogged) {
+            this._depthNullLogged = true;
+            (window.dbg || function(){})('depth-diag: getDepthInformation liefert null (kein Depth-Support/Format)');
+          }
+        } catch (e) {
+          if (!this._depthErrLogged) { this._depthErrLogged = true;
+            (window.dbg || function(){})('depth-diag ERROR:', e && (e.name + ' ' + e.message)); }
+        }
       }
       const target = camPos.clone().addScaledVector(fwd, dist);
       const normal = (Math.abs(fwd.y) < 0.45)
@@ -786,7 +839,7 @@
 
 <script>
 /* ─── Konfiguration ─── */
-const APP_VERSION   = 'p32 · stage1-quickwins';   // bei jedem Patch hochzählen
+const APP_VERSION   = 'p33 · stage2-tracking';   // bei jedem Patch hochzählen
 const EXHIBITION_ID = '1';
 const COLORS = [
   '#00cfff','#ff3dac','#39ff14','#ff6b00',
@@ -796,6 +849,7 @@ const COLORS = [
 let selectedColor = COLORS[0];
 const renderedIds  = new Set();
 let firstLoadDone  = false;   // Spawn-Welle erst nach Erst-Load zeigen
+window._printAnchors = [];    // per-Abdruck-XRAnchors dieser Session {anchor, fpId, el}
 const sceneEl      = document.querySelector('a-scene');
 const HAND_W       = 0.25;   // Abdruck-Breite in m (realistisch, nicht riesig)
 
@@ -838,7 +892,7 @@ function makeHandCanvas(baseColor) {
   return cv;
 }
 
-/* Textur-Cache: nur 10 Farben → eine Textur pro Farbe statt pro Abdruck */
+/* Textur-Cache: nur 10 Farben -> eine Textur pro Farbe statt pro Abdruck */
 const HAND_TEX = new Map();
 function handTexture(col) {
   if (!HAND_TEX.has(col)) HAND_TEX.set(col, new THREE.CanvasTexture(makeHandCanvas(col)));
@@ -920,6 +974,7 @@ function spawnHandprint(fp) {
 
   const wrap = document.createElement('a-entity');
   wrap.setAttribute('position', `${fp.x} ${y} ${fp.z}`);
+  wrap.setAttribute('data-fp-id', fp.id);   // für per-Print-XRAnchor auffindbar
   wrap.setAttribute('animation__spawn',
     'property: scale; from: 0 0 0; to: 1 1 1; dur: 700; easing: easeOutElastic;');
   // Oberflächenausrichtung via gespeichertem Quaternion anwenden
@@ -1245,6 +1300,7 @@ sceneEl.addEventListener('exit-vr', () => {
   calibMode = false;
   document.getElementById('calib-overlay').style.display = 'none';
   anchorSet = false;
+  window._printAnchors = [];   // XRAnchors sind session-gebunden
 });
 
 /* ─── Popup: Nachricht anzeigen ─── */
@@ -1461,6 +1517,8 @@ function startCalibration() {
 async function confirmPlacement(x, y, z, qx, qy, qz, qw) {
   if (!placeModeActive || !pendingFp) return;
   placeModeActive = false;
+  // Hit-Result für per-Print-XRAnchor sichern, BEVOR das Reticle verschwindet
+  const hitResult = sceneEl.components['fp-hit-test']?.lastResult || null;
   document.getElementById('place-overlay').style.display = 'none';
   document.getElementById('reticle').setAttribute('visible', false);
   document.getElementById('detect-status').style.display = 'none';
@@ -1485,7 +1543,16 @@ async function confirmPlacement(x, y, z, qx, qy, qz, qw) {
       body:    JSON.stringify({ ...pendingFp, ...rel }),
     });
     dbg('  POST status=', res.status);
+    const saved = await res.json().catch(() => null);
     await loadFootprints();
+    // per-Print-XRAnchor: ARCore hält den Punkt drift-frei in der Welt.
+    // Feature-Detection statt try-crash; statisch bleibt der Fallback.
+    if (saved && saved.id != null && hitResult && typeof hitResult.createAnchor === 'function') {
+      hitResult.createAnchor().then(anchor => {
+        window._printAnchors.push({ anchor, fpId: saved.id, el: null });
+        vlog('anchor-per-print', { id: saved.id, count: window._printAnchors.length });
+      }).catch(e => dbg('createAnchor FAIL (statischer Fallback):', e && e.message));
+    }
   } catch (e) {
     dbg('  POST FAIL:', e && e.message);
   }

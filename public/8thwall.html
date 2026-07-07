@@ -14,7 +14,7 @@
 
   <script>
   /* ════════ Konfiguration ════════ */
-  const APP_VERSION   = 'w7 · stage1-quickwins';
+  const APP_VERSION   = 'w8 · stage2-tracking';
   const EXHIBITION_ID = '1';
   const HAND_W        = 0.25;                // Meter (absolute Skalierung = wie Android)
   const PLACE_MIN = 0.5, PLACE_MAX = 4.0;     // Reticle-Distanz in Metern
@@ -125,20 +125,46 @@
         const cam = camEl && camEl.getObject3D('camera');
         if (!cam) return;
         cam.getWorldPosition(this._cp);
-        this._ray.setFromCamera({x:0,y:0}, cam);
         const pt = this._v;
-        let ok = this._ray.ray.intersectPlane(this._plane, pt);
-        cam.getWorldDirection(this._fwd); this._fwd.y = 0;
-        if (this._fwd.lengthSq() < 1e-4) this._fwd.set(0,0,-1); else this._fwd.normalize();
-        let d = ok ? this._cp.distanceTo(pt) : Infinity;
-        if (!ok || d > PLACE_MAX || pt.y > this._cp.y) {
-          pt.copy(this._cp).addScaledVector(this._fwd, 1.5); pt.y = 0; d = 1.5;
-        } else if (d < PLACE_MIN) {
-          pt.copy(this._cp).addScaledVector(this._fwd, PLACE_MIN); pt.y = 0;
+        let placedY = 0.02, viaHitTest = false;
+
+        // Bevorzugt: echter 8th-Wall-Hit-Test (geschätzte/erkannte Flächen,
+        // korrekt auch auf Podesten/Treppen). Feature-Detection: API liegt im
+        // SLAM-Chunk und ist evtl. nicht auf jedem Gerät vorhanden.
+        if (window.XR8 && XR8.XrController && typeof XR8.XrController.hitTest === 'function') {
+          try {
+            const hits = XR8.XrController.hitTest(0.5, 0.5,
+              ['DETECTED_SURFACE', 'ESTIMATED_SURFACE', 'FEATURE_POINT']);
+            if (hits && hits.length && hits[0].position) {
+              const h = hits[0].position;
+              const hd = this._cp.distanceTo(pt.set(h.x, h.y, h.z));
+              if (hd >= PLACE_MIN && hd <= PLACE_MAX) { placedY = h.y + 0.02; viaHitTest = true; }
+            }
+            if (!this._htLogged) { this._htLogged = true; dbg('xr8.hitTest verfügbar'); }
+          } catch (e) {
+            if (!this._htErr) { this._htErr = true; dbg('xr8.hitTest err:', e && e.message); }
+          }
+        } else if (!this._htMissLogged) {
+          this._htMissLogged = true; dbg('xr8.hitTest fehlt – nutze Mathe-Ebene y=0');
         }
-        reticle.object3D.position.set(pt.x, 0.02, pt.z);
+
+        if (!viaHitTest) {
+          // Fallback: ideale Bodenebene y=0 (8th Wall legt den geschätzten
+          // Boden bei absolute scale auf y=0)
+          this._ray.setFromCamera({x:0,y:0}, cam);
+          let ok = this._ray.ray.intersectPlane(this._plane, pt);
+          cam.getWorldDirection(this._fwd); this._fwd.y = 0;
+          if (this._fwd.lengthSq() < 1e-4) this._fwd.set(0,0,-1); else this._fwd.normalize();
+          let d = ok ? this._cp.distanceTo(pt) : Infinity;
+          if (!ok || d > PLACE_MAX || pt.y > this._cp.y) {
+            pt.copy(this._cp).addScaledVector(this._fwd, 1.5); pt.y = 0;
+          } else if (d < PLACE_MIN) {
+            pt.copy(this._cp).addScaledVector(this._fwd, PLACE_MIN); pt.y = 0;
+          }
+        }
+        reticle.object3D.position.set(pt.x, placedY, pt.z);
         reticle.setAttribute('visible', true);
-        this._last = { x:pt.x, z:pt.z };
+        this._last = { x:pt.x, y: viaHitTest ? placedY : 0, z:pt.z };
         window._reticlePt = this._last;
       } catch(e){ if(!this._err){ this._err=true; dbg('reticle tick err:', e&&e.message); } }
     },
@@ -150,7 +176,7 @@
     rendered.add(fp.id);
     const W = HAND_W, H = W*(380/300), col = fp.color || '#00cfff';
     const wrap = document.createElement('a-entity');
-    wrap.setAttribute('position', `${fp.x} 0.03 ${fp.z}`);
+    wrap.setAttribute("position", `${fp.x} ${(fp.y||0)+0.03} ${fp.z}`);
     wrap.setAttribute('animation__spawn','property: scale; from: 0 0 0; to: 1 1 1; dur: 600; easing: easeOutElastic');
 
     // Holo-Hand flach auf Boden
@@ -375,12 +401,12 @@ let toastTimer=null;
 function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.style.opacity='1';
   clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.style.opacity='0',2000); }
 
-/* Welt -> relativ zum Anchor (#fp-root) */
-function worldToAnchorLocal(px,pz){
+/* Welt -> relativ zum Anchor (#fp-root), inkl. Höhe (Podeste via hitTest) */
+function worldToAnchorLocal(px,pz,py){
   const root=document.getElementById('fp-root').object3D; root.updateMatrixWorld(true);
-  const w=new THREE.Vector3(px,0,pz);
+  const w=new THREE.Vector3(px,py||0,pz);
   const l=root.worldToLocal(w.clone());
-  return { x:l.x, z:l.z };
+  return { x:l.x, y:l.y, z:l.z };
 }
 function setAnchor(px,pz){
   const root=document.getElementById('fp-root').object3D;
@@ -398,15 +424,16 @@ async function confirmPlacement(){
   if(!pt){ dbg('place: kein Reticle-Punkt'); return; }
   placeModeActive=false;
   document.getElementById('place-overlay').style.display='none';
-  const rel = worldToAnchorLocal(pt.x, pt.z);
-  dbg('place world', pt.x.toFixed(2), pt.z.toFixed(2), 'rel', rel.x.toFixed(2), rel.z.toFixed(2));
+  const rel = worldToAnchorLocal(pt.x, pt.z, pt.y || 0);
+  dbg('place world', pt.x.toFixed(2), (pt.y||0).toFixed(2), pt.z.toFixed(2),
+      'rel', rel.x.toFixed(2), rel.y.toFixed(2), rel.z.toFixed(2));
   spawnFootprint({ id:'local-'+Date.now(), name:pendingFp.name, message:pendingFp.message,
-    color:pendingFp.color, x:rel.x, z:rel.z });
+    color:pendingFp.color, x:rel.x, y:rel.y, z:rel.z });
   try {
     const res=await fetch(`/api/footprints/${EXHIBITION_ID}`,{ method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({ name:pendingFp.name, message:pendingFp.message, color:pendingFp.color,
-        size:1.0, x:rel.x, y:0, z:rel.z, quat_x:0, quat_y:0, quat_z:0, quat_w:1 }) });
+        size:1.0, x:rel.x, y:rel.y, z:rel.z, quat_x:0, quat_y:0, quat_z:0, quat_w:1 }) });
     dbg('POST status=', res.status);
   } catch(e){ dbg('POST FAIL:', e&&e.message); }
   pendingFp=null; toast('Abdruck platziert');
@@ -498,7 +525,7 @@ COLORS.forEach(c => { const b=document.createElement('button');
 async function loadFootprints(){
   try {
     const data=await fetch(`/api/footprints/${EXHIBITION_ID}`).then(r=>r.json());
-    data.forEach(d => spawnFootprint({ id:d.id, name:d.name, message:d.message, color:d.color, x:d.x, z:d.z }));
+    data.forEach(d => spawnFootprint({ id:d.id, name:d.name, message:d.message, color:d.color, x:d.x, y:d.y, z:d.z }));
     firstLoadDone = true;
     document.getElementById('count').textContent=data.length;
     document.getElementById('peek-count').textContent=`${data.length} Abdrücke`;
