@@ -14,7 +14,7 @@
 
   <script>
   /* ════════ Konfiguration ════════ */
-  const APP_VERSION   = 'w9 · calib-btn+guards';
+  const APP_VERSION   = 'w10 · slam-tune';
   const EXHIBITION_ID = '1';
   const HAND_W        = 0.25;                // Meter (absolute Skalierung = wie Android)
   const PLACE_MIN = 0.5, PLACE_MAX = 4.0;     // Reticle-Distanz in Metern
@@ -579,9 +579,22 @@ function installTrackMonitor(){
   } catch (e) { dbg('track-monitor err:', e && e.message); }
 }
 
+/* ── SLAM entlasten: Image-Target-Scanning abschalten (wir nutzen keine
+   Marker) → mehr CPU-Budget pro Frame fürs World-Tracking. Wird die Option
+   von der OSS-Engine nicht unterstützt, passiert nichts (try/catch + Log). ── */
+function tuneTracking(){
+  try {
+    if (window.XR8 && XR8.XrController && typeof XR8.XrController.configure === 'function') {
+      XR8.XrController.configure({ imageTargets: [] });
+      dbg('tune: imageTargets deaktiviert');
+    }
+  } catch (e) { dbg('tune imageTargets nicht unterstützt:', e && e.message); }
+}
+
 /* ── Start, wenn Tracking läuft ── */
 sceneEl.addEventListener('realityready', () => {
   dbg('realityready (Tracking läuft)');
+  tuneTracking();
   setStatus('Tracking aktiv. Langsam bewegen. Driftet? Neu zentrieren.', true);
   document.getElementById('calib-btn').style.display='block';
   document.getElementById('recenter-btn').style.display='block';
