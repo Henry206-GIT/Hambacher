@@ -839,7 +839,7 @@
 
 <script>
 /* ─── Konfiguration ─── */
-const APP_VERSION   = 'p33 · stage2-tracking';   // bei jedem Patch hochzählen
+const APP_VERSION   = 'p34 · spacing-guard';   // bei jedem Patch hochzählen
 const EXHIBITION_ID = '1';
 const COLORS = [
   '#00cfff','#ff3dac','#39ff14','#ff6b00',
@@ -1106,6 +1106,7 @@ async function loadFootprints() {
         anchorPos: [root.position.x, root.position.y, root.position.z] });
     }
     data.forEach(spawnHandprint);
+    window._printPositions = data.map(d => ({ x: d.x, z: d.z }));   // für Mindestabstand
     firstLoadDone = true;
     document.getElementById('badge').textContent = `${data.length} Handabdrücke`;
     const sc = document.getElementById('sheet-peek-count');
@@ -1514,8 +1515,21 @@ function startCalibration() {
   dbg('Kalibrierung gestartet');
 }
 
+const MIN_SPACING = 0.35;   // Meter Mindestabstand zwischen Abdrücken
+
 async function confirmPlacement(x, y, z, qx, qy, qz, qw) {
   if (!placeModeActive || !pendingFp) return;
+  // Mindestabstand prüfen BEVOR der Platzier-Modus endet (bei Ablehnung bleibt er aktiv)
+  const relCheck = worldToAnchorLocal(x, y || 0, z, 0, 0, 0, 1);
+  const tooClose = (window._printPositions || []).some(p =>
+    Math.hypot(p.x - relCheck.x, p.z - relCheck.z) < MIN_SPACING);
+  if (tooClose) {
+    dbg('place blockiert: zu nah an anderem Abdruck');
+    const t = document.getElementById('toast');
+    t.textContent = 'Zu nah an einem anderen Abdruck – etwas versetzen';
+    t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2200);
+    return;
+  }
   placeModeActive = false;
   // Hit-Result für per-Print-XRAnchor sichern, BEVOR das Reticle verschwindet
   const hitResult = sceneEl.components['fp-hit-test']?.lastResult || null;
