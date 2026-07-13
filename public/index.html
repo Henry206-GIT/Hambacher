@@ -677,21 +677,7 @@
       margin-left:auto; align-self:center;
       font:11px/1 monospace; color:#3a6; letter-spacing:.5px;
     ">–</span>
-    <button id="dbg-toggle" style="
-      pointer-events:auto;
-      background:rgba(0,200,255,0.1); border:1px solid rgba(0,200,255,0.3);
-      color:#7af; font-size:11px; border-radius:8px; padding:4px 9px; cursor:pointer;
-    ">Log</button>
   </div>
-
-  <!-- Debug-Log-Overlay (im AR via dom-overlay sichtbar) -->
-  <div id="dbg-log" style="
-    position:fixed; top:54px; left:6px; right:6px; z-index:400;
-    max-height:38vh; overflow-y:auto; pointer-events:auto;
-    background:rgba(0,0,0,0.82); color:#5f8; font:11px/1.45 monospace;
-    padding:8px 10px; border:1px solid rgba(0,255,150,0.25); border-radius:8px;
-    white-space:pre-wrap; word-break:break-word;
-  "></div>
 
   <div class="ar-stage">
     <div id="badge">Lade Handabdrücke…</div>
@@ -839,7 +825,7 @@
 
 <script>
 /* ─── Konfiguration ─── */
-const APP_VERSION   = 'p34 · spacing-guard';   // bei jedem Patch hochzählen
+const APP_VERSION   = 'p35 · no-log-ui';   // bei jedem Patch hochzählen
 const EXHIBITION_ID = '1';
 const COLORS = [
   '#00cfff','#ff3dac','#39ff14','#ff6b00',
@@ -1164,16 +1150,6 @@ window.addEventListener('unhandledrejection', e =>
   dbg('PROMISE REJECT:', (e.reason && (e.reason.message || e.reason)) || 'unknown'));
 document.getElementById('version-badge').textContent = APP_VERSION;
 dbg('=== VERSION', APP_VERSION, '=== UA:', navigator.userAgent);
-document.getElementById('dbg-toggle').onclick = () => {
-  const el = document.getElementById('dbg-log');
-  el.style.display = (el.style.display === 'none') ? 'block' : 'none';
-};
-// Jeden Tap mitschreiben Korrelation mit Fehlern/Freeze
-document.addEventListener('pointerdown', e => {
-  const t = e.target;
-  dbg('tap @', Math.round(e.clientX) + ',' + Math.round(e.clientY),
-      'auf', t.id || t.className || t.tagName);
-}, { capture: true });
 
 /* ─── Kamera starten (Gyro-Fallback) ─── */
 function startFallbackCamera() {
